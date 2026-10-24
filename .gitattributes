@@ -1,0 +1,2 @@
+# Shell scripts must keep LF: with core.autocrlf on Windows, a CRLF build.sh fails in Git Bash.
+*.sh text eol=lf

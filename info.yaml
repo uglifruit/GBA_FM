@@ -1,0 +1,127 @@
+draft: true
+Name: GBA FM Voice
+short-description: "Boots a cartridge-less Game Boy Advance over the pulse jacks via BIOS Multiboot, then plays it as a two-voice stereo FM synth with a drum mode, with the editor on the GBA's own screen"
+Language: C++ (Pico SDK + ComputerCard) + C (GBA payload)
+Creator: Andy Jenkinson (uglifruit)
+Version: 0.2.0
+Status: Beta
+License: MIT
+repository: https://github.com/uglifruit/GBA_FM
+Editor: none
+date-created: 2026-10-24
+date-updated: 2026-10-24
+
+contact:
+  social:
+    github: https://github.com/uglifruit
+
+uf2:
+  - path: UF2/gba_link.uf2
+    name: GBA FM Voice 0.2.0
+
+tags:
+  - gba
+  - link-cable
+  - multi-boot
+  - fm
+  - synth-voice
+  - screen
+  - quantiser
+
+summary: |
+  Turns a Game Boy Advance into a two-voice FM synth with a drum mode for your modular. The
+  Workshop Computer loads custom software onto the GBA over its link cable using the GBA's built-in
+  multiboot - no cartridge, no modifications. The GBA computes the FM sound in real time and plays
+  it in stereo through its Direct Sound outputs; your CV, knobs and gates play it, and the GBA sends
+  its notes, gates and buttons back to the rack. Same cable as GBA PSG Voice.<br><br>
+
+  PLAYING. Voice 1: CV In 2 is 1V/oct pitch and Pulse In 2 the gate. Voice 2: Audio In 2 is pitch
+  and Audio In 1 the gate. The Main knob is brightness (FM index) for both, CV In 1 Voice 1's
+  brightness, X steps Voice 1's C:M ratio and Y scales decay and release. Knobs are centred: noon is
+  the sound as patched. The Z switch triggers (down) or drones (up). DRUM MODE turns Audio In 1 and
+  2 into two drum triggers instead, caught at 48 kHz so even 1 ms triggers fire. CV Out 2 is Voice
+  1's quantised pitch, CV Out 1 its gate, Audio Out 1 and 2 the GBA's A and B buttons.<br><br>
+
+  THE EDITOR. START opens it, SELECT + Left/Right changes page, A + D-pad changes values. Eight
+  pages: MEM (16 patch slots), FM (voice, preset, ratio, index, feedback, noise, pitch envelope),
+  ENV (index and amplitude envelopes), MIX (level and pan), MAP (any input to any parameter), BTN
+  (what the GBA's buttons do), SET (drum mode, switch, scale) and CAL (1V/oct trims for CV and
+  audio inputs). 26 presets, tuned and untuned.<br><br>
+
+  See README.md for a guided tour and TECHNICAL.md for the full reference.
+
+panel:
+  inputs:
+    - id: CVIn2
+      name: Pitch (voice 1)
+      description: 1V/oct pitch CV for voice 1. Trim tracking on the GBA CAL page (CV inputs are not factory calibrated). Re-assignable on the MAP page
+    - id: PulseIn2
+      name: Gate (voice 1)
+      description: Gate and trigger for voice 1. Every rising edge starts a note; edges shorter than the 1ms poll are still caught
+    - id: AudioIn2
+      name: Pitch (voice 2) / Drum B
+      description: 1V/oct pitch CV for voice 2, with its own CAL trim. In drum mode, the Drum B trigger (edges caught at 48kHz)
+    - id: AudioIn1
+      name: Gate (voice 2) / Drum A
+      description: Gate for voice 2. In drum mode, the Drum A trigger (edges caught at 48kHz)
+    - id: CVIn1
+      name: FM index (voice 1)
+      description: Adds to voice 1's FM index (bipolar), so a CV or envelope here opens and closes the brightness
+    - id: PulseIn1
+      name: GBA SO (MISO)
+      description: Serial data back from the GBA. Read directly via PIO, not the 48kHz pulse path
+  outputs:
+    - id: PulseOut1
+      name: GBA SC (clock)
+      description: Master serial clock driven by the RP2040 (PIO), inversion handled in hardware
+    - id: PulseOut2
+      name: GBA SI (MOSI)
+      description: Serial data to the GBA (payload upload, then the live input stream)
+    - id: CVOut2
+      name: Quantised pitch
+      description: The note voice 1 is sounding, as calibrated 1V/oct. Turns the pair into a quantiser for the rest of the rack
+    - id: CVOut1
+      name: Gate out
+      description: 5V while voice 1 is sounding
+    - id: AudioOut1
+      name: A button gate
+      description: High while the GBA's A button is held - the performance gesture as a patchable voltage
+    - id: AudioOut2
+      name: B button gate
+      description: High while the GBA's B button is held
+
+controls:
+  knobs:
+    - main:
+        name: Brightness
+        description: FM index of both voices (and both drums in drum mode), centred - noon is the sound as patched
+      x:
+        name: Ratio
+        description: Steps the C:M ratio up to eight steps either side of the patch's. Noon is as patched
+      y:
+        name: Decay / release
+        description: Shortens or lengthens both envelopes' decay and release. Noon is as patched
+
+  switch:
+    down:
+      name: Trigger
+      description: Momentary down fires a note
+    up:
+      name: Drone
+      description: Holds the gate open while up, so the voice sustains
+
+  leds:
+    - display: list
+      items:
+        - id: LED0
+          name: Link (solid booted, blinking connecting)
+        - id: LED1
+          name: Gate in / upload progress / fault code bit 0
+        - id: LED2
+          name: Note sounding / upload progress / fault code bit 1
+        - id: LED3
+          name: Editing on the GBA / upload progress / fault code bit 2
+        - id: LED4
+          name: Edit page bit 0 / upload progress
+        - id: LED5
+          name: Edit page bit 1 / upload progress
