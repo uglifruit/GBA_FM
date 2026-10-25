@@ -37,7 +37,11 @@ static const Preset PRESET[PRESET_COUNT] = {
     { "SUB BASS",    0,  0, 12, 0, 0,   0,  0,  0, {  0, 20,  2, 14 }, {  0, 22, 13, 14 } },
     { "BRASS",       1,  0, 45, 1, 0,   0,  0,  0, { 16, 23,  9, 18 }, { 12, 22, 12, 18 } },
     { "ORGAN",       3,  0, 12, 4, 0,   0,  0,  0, {  0, 10, 15, 10 }, {  2, 10, 15, 10 } },
-    { "FLUTE",       1,  0,  6, 0, 2,   0,  0,  0, { 12, 20, 10, 18 }, { 14, 20, 13, 18 } },
+    // NOISE 0, not 2: the noise blend is white to 16 kHz and holds its share for the whole note, so
+    // even 2 left a steady hiss only 24 dB under the tone (measured: harmonic-to-noise 24 dB at 2,
+    // 41 dB - the 8-bit floor - at 0). The breath comes from the index rising slightly ahead of
+    // the level instead.
+    { "FLUTE",       1,  0,  6, 0, 0,   0,  0,  0, { 12, 20, 10, 18 }, { 14, 20, 13, 18 } },
     { "STRINGS",     1,  6, 18, 3, 0,   0,  0,  0, { 22, 24, 12, 23 }, { 23, 24, 13, 24 } },
     // Feedback 5, not 7: the averaged feedback doubles per step, and 7 (about 2 pi effective) is
     // chaos - it measured as broadband noise in the model. 5 is the saw-like region.

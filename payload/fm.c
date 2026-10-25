@@ -338,8 +338,9 @@ static IWRAM_CODE int voice4_block(int live, int32_t *vo)
         return 0;
     }
 
-    int32_t  to[FM4_OPS];
-    uint32_t inc[FM4_OPS];
+    // Static for the same reason as the mix buffers: the IRQ stack is small.
+    static IWRAM_BSS int32_t  to[FM4_OPS];
+    static IWRAM_BSS uint32_t inc[FM4_OPS];
     for (int k = 0; k < FM4_OPS; k++) {
         env_step(&s->env[k], &s->stage[k], trig, gate, c->atk[k], c->dec[k],
                  (int32_t)c->sus[k], c->rel[k]);
@@ -365,9 +366,16 @@ static IWRAM_CODE int voice4_block(int live, int32_t *vo)
     return 1;
 }
 
+// The mix buffers are STATIC, not locals. Everything here runs on the BIOS's IRQ stack, which has
+// only the space between 0x03007FA0 and the user stack below it, and these three arrays alone are
+// 192 bytes. As locals they took the 4-op path to ~576 bytes - past the 416 the IRQ stack then had,
+// into the top of the main loop's stack, which froze the editor the moment 4-op mode came on. The
+// interrupt cannot re-enter itself (IME is 0 inside it), so one static copy is safe.
+static IWRAM_BSS int32_t s_accL[AUDIO_BLOCK], s_accR[AUDIO_BLOCK], s_vo[AUDIO_BLOCK];
+
 IWRAM_CODE void fm_render_block(int8_t *left, int8_t *right)
 {
-    int32_t accL[AUDIO_BLOCK], accR[AUDIO_BLOCK], vo[AUDIO_BLOCK];
+    int32_t *accL = s_accL, *accR = s_accR, *vo = s_vo;
     for (int i = 0; i < AUDIO_BLOCK; i++) { accL[i] = 0; accR[i] = 0; }
     if (s_noise == 0) s_noise = 0x2545F491u;    // xorshift's one forbidden state is zero
 

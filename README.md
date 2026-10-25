@@ -177,7 +177,8 @@ decay, sustain and release, with the shape drawn as you edit it.
 For the 4-op voice this page becomes an **operator grid**, one column per operator: ratio, detune,
 level, attack, decay, sustain and release, with the algorithm drawn underneath. Carriers are shown
 in green. On the RATIO row, **A + Up/Down** changes the coarse ratio and **A + Left/Right** the
-fine.
+fine. Move down past RELEASE to **ALG** and **FB**, beside the diagram, to change the algorithm and
+operator 4's feedback right there.
 
 ### MIX: mixer
 

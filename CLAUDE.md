@@ -190,11 +190,16 @@ C-compatible (payload is C, firmware is C++): plain `#define` and `static inline
    constants are fine; `synth.c` carries `udiv32` for the one place that needs it. 64-bit
    *multiplies* (`(uint64_t)a * b`, `(int64_t)a * b`) compile to `UMULL`/`SMULL` inline and are
    fine; 64-bit divides are not.
-5. **The user stack sits at `0x03007E00`, not `0x03007F00`.** The BIOS gives the IRQ handler the
-   IRQ stack at `0x03007FA0`; at `0x03007F00` that is only 160 bytes. The IRQ stack now carries
-   the audio render (dispatcher → DMA handler → `fm_render_block`, ~120 bytes) as well as the
-   serial harvest. IWRAM code and data grow up from `0x03000000` (~5 KB today), so they never
-   meet the stacks.
+5. **The user stack sits at `0x03007C00`; the IRQ stack is everything between it and
+   `0x03007FA0` (928 bytes) — and overrunning it is SILENT.** It writes over the top of the main
+   loop's stack and the editor freezes, with nothing pointing at the audio. That is exactly what
+   happened when 4-op mode came in (2026-10-25): with the mixer's buffers as locals the IRQ path
+   needed ~576 bytes against 416 (108's `0x03007E00`), and switching VOICE MODE on SET left a blank
+   screen. **No large locals in anything the DMA2 interrupt calls** — `fm_render_block`'s buffers
+   and `voice4_block`'s arrays are static IWRAM. Measure after any change to the audio path:
+   compile `fm.c` with `-fstack-usage` and add up BIOS 24 + `irq_dispatch` + `audio_on_dma2_irq` +
+   `fm_render_block` + `voice4_block` + `render_4op` (352 bytes today). IWRAM code and data grow
+   up from `0x03000000` (~10.5 KB today), well clear of the stacks.
 6. **The serial IRQ does NOT replace the polled path.** `link_service()` still runs the same body
    with interrupts masked, so the two are mutually exclusive rather than racing. If the IRQ never
    fires the payload degrades to the polled behaviour. The CAL page shows which is live.
@@ -278,6 +283,18 @@ C-compatible (payload is C, firmware is C++): plain `#define` and `static inline
   run V1's glide at double speed.)
 - Upload is now 51 KB / ~7.7 s. The eight loop copies and the grid UI are most of the growth.
 
+## Drawing speed
+
+- **`rect`, `line` and `glyph` run from IWRAM** (`gfx.c`). From EWRAM, one pixel per iteration and
+  a `rect()` call per lit glyph pixel, a full-screen clear was ~1M cycles (~60 ms, estimated) and
+  the editor visibly crawled (Andy, 2026-10-25). Now `rect` fills two pixels per 32-bit store,
+  unrolled by eight, and `glyph` (scale 1) and `line` write VRAM directly. Their callers (`text`,
+  `rect_clear`, the UI) stay in EWRAM.
+- Keep the VRAM pointers `volatile`: a plain fill loop is a memset idiom, and GCC emitting a call
+  to `memset` is a -nostdlib link error.
+- `ui.c` cannot go Thumb or `-Os` to save upload time or speed up: both make GCC call
+  `__aeabi_idiv` even for constant divisors (Thumb-1 has no long multiply).
+
 ## The matrix, the buttons and drum mode
 
 - **108's matrix model, FM destinations.** One mapping per source (CV1 CV2 AU1 AU2 PU2 MAIN X Y),
@@ -288,7 +305,10 @@ C-compatible (payload is C, firmware is C++): plain `#define` and `static inline
   play the masked voices. Edges are tracked for EVERY source every tick whatever it is mapped to,
   so remapping never fires a stale backlog.
 - **PITCH uses the calibration of the source's circuit**: CV (cvScale/cvOffset) for everything but
-  AU1/AU2, which use auScale/auOffset. CV OFFSET's factory value is −27 (Andy's module).
+  AU1/AU2, which use auScale/auOffset. Factory values are Andy's measured trims: CV OFFSET −27,
+  AUD OFFSET −37 (2026-10-25). AUD OFFSET first shipped at 0, which put V1 93 cents above V2 at
+  every voltage (Andy heard "about a semitone"); −27 (copying CV, "same ADC") was a guess that
+  turned out wrong — the audio inputs' circuit has its own offset.
 - **Drum mode**: AU1/AU2's matrix rows are SKIPPED (shown as DRUM A/B HIT, locked in the editor,
   kept for normal mode); their edges strike DRUM A / DRUM B. Anything else that would play V2 plays
   DRUM A. V2 stops taking notes and releases.

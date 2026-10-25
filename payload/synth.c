@@ -272,10 +272,15 @@ void synth_default_patch(void)
     // the CAL page). A starting point, not a calibration: TRIM THEM ON EVERY UNIT with the CAL
     // page's live tuners (two readings a known interval apart give SCALE directly as
     // 256 * (high - low) / semitones). The AU pair starts from the CV values and needs its own trim.
+    //
+    // AU OFFSET -37, MEASURED BY ANDY ON THIS MODULE (2026-10-25). Not 0: shipped at 0 it put V1 93
+    // cents above V2 at every voltage (~29 counts per semitone). Not the CV value either: -27 was
+    // the first guess on the grounds that both pairs share one ADC, but the audio inputs' own
+    // circuit adds its own offset, and -37 is what plays in tune. Trim it per unit.
     p->cvScale  = 7422;
     p->cvOffset = -27;
     p->auScale  = 7422;
-    p->auOffset = 0;
+    p->auOffset = -37;
 }
 
 void synth_init(void)

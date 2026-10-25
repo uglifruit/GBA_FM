@@ -96,14 +96,18 @@ _start_cart:
     subs r2, r2, #1
     bne 1b
 
-    @ IWRAM (system) stack. NOT the conventional 0x03007F00: the BIOS hands our serial IRQ
-    @ handler the IRQ stack at 0x03007FA0, and at 0x03007F00 that leaves it only 160 bytes
-    @ before it collides with this one. link_pump() calls two levels deeper than a typical
-    @ handler, so we move ours down and give the IRQ stack 416 bytes instead. The FM voice's
-    @ IWRAM sections start at the BOTTOM of IWRAM and are a few KB, so the move still costs
-    @ nothing. The IRQ stack now also carries the audio path (dispatcher -> DMA handler -> FM
-    @ render, about 120 bytes deep at most), which is the other reason to keep those 416 bytes.
-    ldr sp, =0x03007E00
+    @ IWRAM (system) stack. NOT the conventional 0x03007F00: the BIOS hands our IRQ handler
+    @ the IRQ stack at 0x03007FA0, and whatever lies between that and this is ALL the IRQ stack
+    @ there is - overrun it and the handler silently writes over the main loop's stack.
+    @
+    @ 108 moved this to 0x03007E00 (416 bytes) for its serial handler. The FM voice's audio
+    @ path runs on the same IRQ stack and is far deeper: dispatcher -> DMA2 handler -> mixer ->
+    @ 4-op voice -> 4-op render. With the mixer's buffers on the stack it needed ~576 bytes, and
+    @ entering 4-op mode froze the editor mid-redraw. The buffers are static now (~350 bytes
+    @ worst case, measured with -fstack-usage) and this is a further 512 bytes down, giving the
+    @ IRQ stack 928. IWRAM's own sections end around 0x03002800, so the move still costs
+    @ nothing that is in use.
+    ldr sp, =0x03007C00
 
     @ Copy .iwram — the audio interrupt, the FM renderer and the sine table — from its load
     @ address inside the image to IWRAM, where it is linked to run. Multiboot can only place the

@@ -892,7 +892,12 @@ static void draw_mixer(void)
 #define OG_DEC     4
 #define OG_SUS     5
 #define OG_REL     6
-#define OG_ROWS    7
+#define OG_ROWS    7       // the grid's parameter rows
+// Below the grid the cursor carries on into the diagram's two voice-wide controls, so the
+// algorithm (and operator 4's feedback, which the diagram shows) is edited where it is seen.
+#define OG_ALG     7
+#define OG_FB      8
+#define OG_NAV     9       // cursor stops, top to bottom
 
 #define OG_TOP    34
 #define OG_ROW    10
@@ -935,8 +940,11 @@ static void op_cell(int r, int k, char *buf)
 
 static void op_adjust(int r, int k, int delta, int horizontal)
 {
-    Op *o = &g_patch.v4.op[k & 3];
+    Voice4 *v = &g_patch.v4;
+    Op *o = &v->op[k & 3];
     switch (r) {
+    case OG_ALG:    v->algo = (uint8_t)clampi(v->algo + (delta > 0 ? 1 : -1), 0, FM4_ALGOS - 1); return;
+    case OG_FB:     v->fb   = (uint8_t)clampi(v->fb + (delta > 0 ? 1 : -1), 0, 7); return;
     case OG_RATIO:
         if (horizontal) o->fine   = (uint8_t)clampi(o->fine + (delta > 0 ? 1 : -1), 0, 99);
         else            o->coarse = (uint8_t)clampi(o->coarse + delta, 0, 31);
@@ -1027,14 +1035,20 @@ static void draw_alg(void)
 {
     const Voice4 *v = &g_patch.v4;
     int a = v->algo & 7;
-    int shape = (a << 1) | (v->fb ? 1 : 0);
+    // The cursor sitting on ALG or FB is part of the shape: those two labels are cells.
+    int cur   = (g_opRow == OG_ALG) ? 1 : (g_opRow == OG_FB) ? 2 : 0;
+    int shape = (a << 6) | (v->fb << 2) | cur;
     if (shape == g_algShape) return;
     g_algShape = shape;
 
     rect(0, ALG_Y0 - 2, SCREEN_W, 4 * ALG_DY + 4, COL_BG);
     char lbl[8];
     dec_at(lbl, scopy(lbl, 0, "ALG "), (uint32_t)a + 1);
-    text(14, ALG_Y0 + 14, lbl, COL_TITLE, 1);
+    if (cur == 1) rect(6, ALG_Y0 + 4, 50, ALG_DY + 1, COL_PANEL);
+    text(10, ALG_Y0 + 5, lbl, cur == 1 ? COL_SEL : COL_TITLE, 1);
+    dec_at(lbl, scopy(lbl, 0, "FB "), v->fb);
+    if (cur == 2) rect(6, ALG_Y0 + 18, 50, ALG_DY + 1, COL_PANEL);
+    text(10, ALG_Y0 + 19, lbl, cur == 2 ? COL_SEL : (v->fb ? COL_WAIT : COL_MID), 1);
 
     uint8_t car = FM4_CARRIERS[a];
     int busTop = 999, busBot = -1;
@@ -1210,12 +1224,13 @@ void ui_frame(void)
             }
 
         } else if (g_page == PAGE_ENV && sel4()) {
-            // The operator grid: the D-pad walks it the way it looks. A + Up/Down changes the cell;
-            // A + Left/Right changes it coarsely - except RATIO, where Up/Down is the coarse
-            // ratio and Left/Right the fine (DX7 order: coarse x (1 + fine/100)).
+            // The operator grid: the D-pad walks it the way it looks, and down past RELEASE into
+            // the diagram's ALG and FB. A + Up/Down changes the cell; A + Left/Right changes it
+            // coarsely - except RATIO, where Up/Down is the coarse ratio and Left/Right the fine
+            // (DX7 order: coarse x (1 + fine/100)), and ALG/FB, which step by one either way.
             if (!adj) {
-                if (steps & KEY_DOWN)  g_opRow = (uint8_t)((g_opRow + 1 >= OG_ROWS) ? 0 : g_opRow + 1);
-                if (steps & KEY_UP)    g_opRow = (uint8_t)((g_opRow == 0) ? OG_ROWS - 1 : g_opRow - 1);
+                if (steps & KEY_DOWN)  g_opRow = (uint8_t)((g_opRow + 1 >= OG_NAV) ? 0 : g_opRow + 1);
+                if (steps & KEY_UP)    g_opRow = (uint8_t)((g_opRow == 0) ? OG_NAV - 1 : g_opRow - 1);
                 if (steps & KEY_RIGHT) g_opCol = (uint8_t)((g_opCol + 1 >= 4) ? 0 : g_opCol + 1);
                 if (steps & KEY_LEFT)  g_opCol = (uint8_t)((g_opCol == 0) ? 3 : g_opCol - 1);
             } else {

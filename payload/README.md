@@ -54,9 +54,10 @@ compile-time constants are fine — GCC turns those into multiply-and-shift. `sy
 shift-subtract `udiv32` for the one place that genuinely needs it.
 
 **The IRQ stack is small.** The BIOS calls the handler in IRQ mode on the IRQ stack at
-`0x03007FA0`. `crt0.s` therefore puts the user stack at `0x03007E00` rather than the usual
-`0x03007F00`, giving the handler 416 bytes instead of 160. It now carries the audio render as well
-as the serial harvest; keep both shallow.
+`0x03007FA0`. `crt0.s` therefore puts the user stack at `0x03007C00` rather than the usual
+`0x03007F00`, giving the handler 928 bytes instead of 160. It carries the whole audio render as well
+as the serial harvest, so nothing the DMA2 interrupt calls may have large locals (the mix buffers
+are static for this reason). Overrunning it is silent: it corrupts the main loop's stack.
 
 **IWRAM code must be copied before it runs.** Multiboot only loads EWRAM. Anything marked
 `IWRAM_CODE` / `IWRAM_RODATA` / `IWRAM_BSS` (see `gba.h`) is linked at `0x03000000` and copied or

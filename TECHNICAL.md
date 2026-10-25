@@ -323,8 +323,10 @@ ATTACK, DECAY, SUSTAIN, RELEASE — with the algorithm drawn beneath it: operato
 signal flowing left to right, carriers green and wired to the output, operator 4 outlined orange
 when its feedback is on. The column headings turn green for the current algorithm's carriers. The
 D-pad walks the grid; **A + Up/Down** changes a cell and **A + Left/Right** changes it by 8, except on
-RATIO, where Up/Down is the coarse ratio and Left/Right the fine. To edit Voice 2 or a drum, pick it
-on the FM page.
+RATIO, where Up/Down is the coarse ratio and Left/Right the fine. Below RELEASE the cursor moves on
+to **ALG** and **FB** beside the diagram: the algorithm (1–8) and operator 4's feedback (0–7), so
+both can be changed while watching the diagram and the carrier headings follow. To edit Voice 2 or a
+drum, pick it on the FM page.
 
 ## MIX — level and pan
 
@@ -508,7 +510,8 @@ together. Trim on the MIX page if that matters.
 
 - **IWRAM:** the two DMA handlers, the dispatcher, the 2-op and 4-op renderers, the sine and pitch
   tables (~8.8 KB), plus both rings and the voice state (~0.8 KB). It sits at the bottom of IWRAM; the stacks stay
-  where 108 put them at the top (user `0x03007E00`, IRQ `0x03007FA0`). `crt0.s` copies `.iwram` in
+  at the top (user `0x03007C00`, IRQ `0x03007FA0`, giving the interrupt 928 bytes; the deepest
+  audio path uses about 350). The drawing primitives (`rect`, `line`, `glyph`) live there too. `crt0.s` copies `.iwram` in
   from its load address in the image and zeroes `.iwram_bss`, before `.bss`.
 - **CPU, estimated from the disassembly:** the clean inner loop is 73 instructions per four
   samples, the noise loop 115, and the stereo mix about 8 per sample per voice. That is roughly
