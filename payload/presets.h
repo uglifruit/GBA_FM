@@ -14,3 +14,10 @@
 
 const char *preset_name(int i);
 void preset_load(Voice *v, int i);
+
+// The 4-op voice's own list. Loading replaces the algorithm, feedback, pitch envelope and all four
+// operators; level, pan, note, octave and portamento stay.
+#define PRESET4_COUNT 16
+
+const char *preset4_name(int i);
+void preset4_load(Voice4 *v, int i);

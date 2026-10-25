@@ -16,7 +16,7 @@ it counts trigger edges on the two audio inputs and sends them in one new CONTRO
 [How it works](#how-it-works)). Everything in Part 1 applies to both.
 
 No cartridge, no flashcart, no modification to the console. The program is uploaded from the
-module every time you switch on, in about six seconds.
+module every time you switch on, in about eight seconds.
 
 **The division of labour is the design.** The Workshop senses; the GBA is the instrument. This
 side reads its inputs and sends them raw; the GBA owns pitch tracking, the FM voices, the
@@ -134,7 +134,7 @@ Power the **Computer first, then the GBA**. The console only syncs if the master
 2. Remove any cartridge from the GBA. Connect the cable.
 3. Power the Workshop. **LED 0 blinks** — it is looking for a console.
 4. Switch the GBA on. If it shows the Nintendo logo it has connected.
-5. **LEDs 1–5 sweep as a progress bar** for about six seconds.
+5. **LEDs 1–5 sweep as a progress bar** for about eight seconds.
 6. The GBA lands on the performance screen. **LED 0 goes solid.** Push the Workshop Computer's momentary switch down
    and you should hear a note.
 
@@ -228,6 +228,44 @@ mappings are kept for when drum mode is turned off. Anything else that would pla
 mapping with the V2 tick, the switch set to V2, TRIG V2) plays Drum A instead, and mappings with
 the V2 tick modulate both drums. One CV mapped to PITCH on V2 tunes the whole kit.
 
+## 4-op mode
+
+SET → VOICE MODE → **4-OP** (or a BTN action). One 4-operator voice takes Voice 1's place: Voice 1's
+gate, pitch and V1-ticked mappings play it, and it follows Voice 1's switch and buttons. Voice 2 is
+off; drum mode works alongside it. The 2-op Voice 1 releases rather than cutting.
+
+The model is the Yamaha 4-op family (DX21 / TX81Z / YM2151), sine only. Operator 4 carries the
+feedback; operator 1 is a carrier in every algorithm.
+
+| Alg | Structure | Carriers |
+|---|---|---|
+| 1 | 4 → 3 → 2 → 1 | 1 |
+| 2 | (4 + 3) → 2 → 1 | 1 |
+| 3 | (4 + 3 → 2) → 1 | 1 |
+| 4 | (4 → 3 + 2) → 1 | 1 |
+| 5 | 4 → 3, 2 → 1 | 1, 3 |
+| 6 | 4 → (3, 2, 1) | 1, 2, 3 |
+| 7 | 4 → 3, plus 2 and 1 | 1, 2, 3 |
+| 8 | 4 + 3 + 2 + 1 | all |
+
+- **Ratio** is the DX7's: coarse × (1 + fine/100), coarse 0 meaning 0.5, so 1.41 is coarse 1, fine 41.
+- **Level** is 0–99 at 0.75 dB per step. For a modulator it is the modulation depth (99 = 8π
+  radians, 91 ≈ 12.6, 83 ≈ 6.3, 75 ≈ 3.1, 67 ≈ 1.6): the useful range is where DX programmers
+  expect it, 60–95. For a carrier it is loudness.
+- **Carrier normalisation:** carriers are scaled by 1/√(count), because partials at different
+  frequencies add in power. A four-carrier organ is about as loud as a one-carrier bass, at the cost
+  of occasional peaks above full scale when carriers align; the mix saturates rather than wraps.
+
+The matrix means the same things where it can. INDEX moves every *modulator's* level, half a step
+per unit (about ±23 dB at full amount); RATIO steps every modulator's coarse ratio; DETUNE detunes
+the modulators; FEEDBACK is operator 4's; the envelope destinations reach all four operators.
+NOISE has nothing to act on. On the BTN page the V1 actions act on the 4-op voice: RATIO ± steps
+the **algorithm**, INDEX ± moves every modulator's level by 3, FB ± is operator 4's feedback,
+PRESET ± walks the 4-op presets.
+
+**4-op presets:** E.PIANO, E.PIANO 2, BELL, TUBULAR, MARIMBA, VIBES, GLOCK, HARP, CLAV, BASS, SYN BASS, BRASS, STRINGS, PAD, ORGAN, FLUTE. Loading one replaces the algorithm, feedback, pitch envelope
+and all four operators, and keeps level, pan, note, octave and portamento.
+
 ---
 
 # Part 3 — The editor
@@ -268,6 +306,10 @@ the current mode is marked (OFF), and can still be edited.
 BRASS, ORGAN, FLUTE, STRINGS, SAW LEAD, PAD. Untuned: KICK, SNARE, CL HAT, OP HAT, TOM, RIM,
 COWBELL, METAL, ZAP, GONG. Drum presets also set the voice's note.
 
+**In 4-op mode, VOICE 1 is the 4-op voice** and the page shows its rows instead: PRESET (the 4-op
+list), ALGORITHM (1–8), OP4 FEEDBACK (0–7), PITCH ENV, P.ENV TIME, 0V NOTE, OCTAVE, PORTAMENTO. The
+operators themselves are on the ENV page.
+
 ## ENV — two envelopes per voice
 
 Rows: VOICE, ENVELOPE (**MOD INDEX** or **CARRIER**), then attack, decay, sustain, release. Attack
@@ -276,9 +318,17 @@ acoustic sound does. The times run from instant to 8 s on a 32-step logarithmic 
 time is the time it takes to cover all but the last −60 dB, where it snaps to its target. The live
 level is drawn beside the shape.
 
+**For the 4-op voice the page is the operator grid** — columns OP1–OP4, rows RATIO, DETUNE, LEVEL,
+ATTACK, DECAY, SUSTAIN, RELEASE — with the algorithm drawn beneath it: operators as numbered boxes,
+signal flowing left to right, carriers green and wired to the output, operator 4 outlined orange
+when its feedback is on. The column headings turn green for the current algorithm's carriers. The
+D-pad walks the grid; **A + Up/Down** changes a cell and **A + Left/Right** changes it by 8, except on
+RATIO, where Up/Down is the coarse ratio and Left/Right the fine. To edit Voice 2 or a drum, pick it
+on the FM page.
+
 ## MIX — level and pan
 
-Four faders: V1, V2, DR A, DR B. **Left/Right** picks one; **A + Up/Down** sets its level (0–15: 0 is off, then 2.5 dB per step, so 15 → 11 is −10 dB),
+Four faders: V1 (labelled 4OP in 4-op mode), V2, DR A, DR B. **Left/Right** picks one; **A + Up/Down** sets its level (0–15: 0 is off, then 2.5 dB per step, so 15 → 11 is −10 dB),
 **A + Left/Right** its pan (L7 … C … R7, constant power). The fader shows the set level with the
 live output inside it. The two voices not sounding in the current mode are drawn dim.
 
@@ -295,12 +345,14 @@ sweeps the useful range of its control: ±6.3 radians of index, ±8 ratio steps,
 
 What each of A, B, L, R, Up, Down, Left and Right does on the PLAY screen: TRIG V1/V2, HOLD V1/V2
 (latching drone), OCT ± V1/V2, RATIO ± V1, INDEX ± V1, FB ± V1, PRESET ± V1/V2 (wrapping through the
-list), TRIG DRUM A/B, DRUM MODE. The factory layout is A trigger, B hold, Up/Down octave,
-Left/Right ratio and L/R feedback, all on Voice 1.
+list), TRIG DRUM A/B, DRUM MODE, 4-OP MODE. The factory layout is A trigger, B hold, Up/Down
+octave, Left/Right ratio and L/R feedback, all on Voice 1. In 4-op mode the V1 actions play the 4-op
+voice (see [4-op mode](#4-op-mode)).
 
 ## SET — modes and scale
 
-DRUM MODE, SWITCH PLAYS (OFF / V1 / V2 / BOTH), SCALE, KEY, TUNING (±50 cents). The quantiser
+VOICE MODE (2 VOICES / 4-OP), DRUM MODE, SWITCH PLAYS (OFF / V1 / V2 / BOTH), SCALE, KEY,
+TUNING (±50 cents). The quantiser
 applies to both melodic voices; drums are not quantised. **FREE** (the default) does not quantise.
 
 ## CAL — trimming 1V/oct
@@ -389,6 +441,16 @@ adds the two drums, so at most three sound at once. A slot switched off by a mod
 cut: its gate is forced low and it releases naturally. A slot whose carrier envelope is idle and
 whose amplitude has reached zero is skipped entirely, so silence costs nothing.
 
+A fifth slot is the **4-operator voice** (`render_4op`), live in 4-op mode in V1's place. Its eight
+algorithms are eight hand-written copies of the per-sample loop, chosen once per block — a switch
+per sample would cost more than an operator. Per sample: operator 4 first (with the averaged
+feedback), then 3, 2 and 1, each `SINE[(phase + sum of its modulators' offsets) >> 24]`, where a
+modulator's offset is `(sine × depth) << 3` exactly as in the 2-op voice. Two modulators feeding one
+operator simply add their offsets: the sum wraps modulo 2³², which is modulo one cycle. Carriers
+contribute `(sine × amplitude) >> 16` each. The tables `FM4_MODS` / `FM4_CARRIERS` describe the same
+algorithms as data for the control layer and the diagram, and the model checks that the hand-written
+bodies agree with them.
+
 Each slot renders into a 16-sample buffer, which is added into the left and right accumulators
 through its pan gains (constant power, Q8). A final pass shifts the sums to 8 bits and
 **saturates**: a wrapped sum is a full-scale spike, a clipped one merely loud.
@@ -434,23 +496,28 @@ searched against the renderer's exact integer recursion, truncation included.
 - sideband levels of a static index of 3.5 are within 0.12 LSB of the Bessel values |Jₖ(3.5)| × 128;
 - release times are within 3 % of `ENV_MS` from 14 ms to 8 s;
 - no intermediate in any voice, the noise blend, the pitch envelope or the mix overflows 32 bits;
-- every preset renders without saturating on its own.
+- every preset renders without saturating on its own;
+- the 4-op voice, modelled from the `FM4_MODS` / `FM4_CARRIERS` tables, never overflows, and the
+  eight hand-written algorithm bodies in `fm.c` are checked against those tables by the model;
+- every 4-op preset peaks between 80 and 123 of 127 at level 14, without saturating.
 
 A drum-mode groove at the factory levels saturates 0.07 % of samples where kick and pluck peak
 together. Trim on the MIX page if that matters.
 
 ### Memory and CPU
 
-- **IWRAM:** the two DMA handlers, the dispatcher, the renderer, the sine and pitch tables (~4 KB),
-  plus both rings and the voice state (~0.8 KB). It sits at the bottom of IWRAM; the stacks stay
+- **IWRAM:** the two DMA handlers, the dispatcher, the 2-op and 4-op renderers, the sine and pitch
+  tables (~8.8 KB), plus both rings and the voice state (~0.8 KB). It sits at the bottom of IWRAM; the stacks stay
   where 108 put them at the top (user `0x03007E00`, IRQ `0x03007FA0`). `crt0.s` copies `.iwram` in
   from its load address in the image and zeroes `.iwram_bss`, before `.bss`.
 - **CPU, estimated from the disassembly:** the clean inner loop is 73 instructions per four
   samples, the noise loop 115, and the stereo mix about 8 per sample per voice. That is roughly
   48 cycles per sample for a voice, 65 with noise, so three voices sounding come to about 30 % of
-  the CPU. The CAL page's DSP LOAD measures the real figure (excluding the BIOS dispatch, a few
-  dozen cycles per block).
-- **Upload:** 38 KB, about 5.8 s (108: 40 KB, 6.1 s).
+  the CPU. The 4-op voice's per-sample loop is 40–50 instructions depending on the algorithm,
+  about 70–85 cycles, so 4-op plus both drums is roughly 35 %. The CAL page's DSP LOAD measures
+  the real figure (excluding the BIOS dispatch, a few dozen cycles per block).
+- **Upload:** 51 KB, about 7.7 s (108: 40 KB, 6.1 s). Most of the growth is the eight copies of the
+  4-op loop and the editor.
 
 ## How it works
 
@@ -532,8 +599,8 @@ which the GBA BIOS validates. See [`payload/README.md`](payload/README.md).
 | `payload/link.c` | GBA serial slave, serial IRQ, protocol decode, patch transfer |
 | `payload/irq.c` | The shared interrupt dispatcher: audio DMA first, serial second |
 | `payload/audio.c` | Direct Sound A + B: Timer 0, DMA1/DMA2, both FIFOs, the rings and their interrupts |
-| `payload/fm.c` | The FM renderer: four voice slots, envelopes, pitch envelope, noise, stereo mix (IWRAM) |
-| `payload/presets.c` | The 26 factory sounds |
+| `payload/fm.c` | The FM renderer: four 2-op slots, the 4-op voice, envelopes, pitch envelope, noise, stereo mix (IWRAM) |
+| `payload/presets.c` | The 26 2-op factory sounds and the 16 4-op ones |
 | `payload/fm_tables.h` | Generated by `gen_fm_tables.py`: sine, note increments, ratios, envelope tables |
 | `payload/synth.c` | Control layer: the matrix, buttons, drum mode, pitch tracking, the patch |
 | `payload/ui.c` | PLAY screen + eight-page editor |

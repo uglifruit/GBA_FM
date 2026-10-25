@@ -51,7 +51,7 @@ const char *act_name[ACT_COUNT] = {
     "OCT + V1", "OCT - V1", "OCT + V2", "OCT - V2",
     "RATIO + V1", "RATIO - V1", "INDEX + V1", "INDEX - V1", "FB + V1", "FB - V1",
     "PRESET + V1", "PRESET - V1", "PRESET + V2", "PRESET - V2",
-    "TRIG DRUM A", "TRIG DRUM B", "DRUM MODE"
+    "TRIG DRUM A", "TRIG DRUM B", "DRUM MODE", "4-OP MODE"
 };
 const char *sw_name[4] = { "OFF", "V1", "V2", "BOTH" };
 
@@ -94,7 +94,9 @@ uint8_t g_slotNote[FM_SLOTS];
 uint8_t g_liveRatio[FM_SLOTS];
 uint8_t g_liveIndex[FM_SLOTS];
 
-static int32_t g_voicePitch[FM_SLOTS];   // after glide
+// After glide: one per 2-op slot, and [FM_SLOTS] for the 4-op voice.
+static int32_t g_voicePitch[FM_SLOTS + 1];
+#define GLIDE_4OP FM_SLOTS
 
 uint16_t g_btn = 0;
 static uint16_t g_btnEdge = 0, g_btnRep = 0, g_btnStep = 0;
@@ -172,16 +174,34 @@ void synth_tuner(int au, int *note, int *cents)
 
 int synth_patch_bytes(void) { return (int)sizeof(Patch); }
 
+// v2 is accepted as well as v3: v3 only APPENDED the 4-op voice, so a v2 patch's bytes are all in
+// the right places and synth_patch_migrate() fills in the rest. v1 (a different layout) is not.
 int synth_patch_valid(const Patch *p)
 {
-    return p->magic == PATCH_MAGIC && p->version == PATCH_VERSION;
+    return p->magic == PATCH_MAGIC && p->version >= 2 && p->version <= PATCH_VERSION;
 }
 
-// Bring a loaded patch up to the current version IN PLACE. Only layout-preserving changes of
-// meaning can be migrated; synth_patch_valid rejects the rest. v2 is a layout change from v1, so
-// there is nothing older to bring forward yet - this is where the first such change goes.
+static void default_v4(Voice4 *v)
+{
+    v->note   = 36;
+    v->octave = 0;
+    v->glide  = 0;
+    v->level  = 14;
+    v->pan    = 0;
+    preset4_load(v, 0);                        // E.PIANO
+}
+
+// Bring a loaded patch up to the current version IN PLACE.
+//
+// v2 -> v3: everything after auOffset is new. A v2 slot arrives zero-padded past the end of its
+// patch, so those bytes read as zeros - voiceMode 0 is already right, but an all-zero 4-op voice
+// would be silent (every level 0), so it gets the factory one.
 void synth_patch_migrate(Patch *p)
 {
+    if (p->version == 2) {
+        p->voiceMode = VMODE_2OP;
+        default_v4(&p->v4);
+    }
     p->version = PATCH_VERSION;
 }
 
@@ -239,6 +259,9 @@ void synth_default_patch(void)
     p->btnAct[5] = ACT_OCTDN_V1;   // Down
     p->btnAct[6] = ACT_RATDN_V1;   // Left
     p->btnAct[7] = ACT_RATUP_V1;   // Right
+
+    p->voiceMode = VMODE_2OP;
+    default_v4(&p->v4);
 
     p->swTarget  = SW_V1;
     p->scale     = SCALE_FREE;     // no quantiser: the factory patch glides straight off the CV
@@ -412,19 +435,86 @@ static void voice_out(int slot, const Voice *vc, const int32_t *md, int32_t pitc
     g_gateOn[slot] = (uint8_t)gate;
 }
 
+// The 4-op voice's counterpart of voice_out(). The matrix destinations mean the same things where
+// they can: INDEX moves every MODULATOR's level (half a step per unit, so full depth is about
+// +-23 dB of modulation), RATIO steps every modulator's coarse ratio, DETUNE detunes the
+// modulators, FEEDBACK is operator 4's, and the envelope offsets reach all four operators. NOISE
+// has nothing to act on: the 4-op voice is sine only.
+static int32_t g_ratioStep4 = 0;
+
+static void voice4_out(const Voice4 *v, const int32_t *md, int32_t pitchQ8, int gate, int edge)
+{
+    volatile Fm4Control *c = &g_fm4;
+    uint32_t algo = v->algo & 7;
+    uint8_t  car  = FM4_CARRIERS[algo];
+    int      ncar = 0;
+    for (int k = 0; k < 4; k++) ncar += (car >> k) & 1;
+    // Carriers are scaled by 1/sqrt(count): partials at different frequencies add in POWER, so this
+    // keeps a two- or four-carrier sound about as loud as a one-carrier sound. 1/count (tried
+    // first) never clipped but left ORGAN and the alg 5 pianos 6-9 dB quieter than BASS. The cost
+    // is that carriers peaking together can exceed full scale; the mix saturates, it never wraps.
+    static const uint16_t NORM[5] = { 0, 65535, 46341, 37837, 32768 };
+
+    int32_t idxOf = md[DEST_INDEX] >> 1;
+    int32_t ratOf = stepped(md[DEST_RATIO], 3, &g_ratioStep4);
+    int32_t detOf = md[DEST_DETUNE] * 2;
+    int32_t fb    = clampi((int32_t)v->fb + (md[DEST_FB] >> 3), 0, 7);
+    int32_t level = clampi((int32_t)v->level + (md[DEST_LEVEL] >> 2), 0, 15);
+    int32_t pan   = clampi((int32_t)v->pan + (md[DEST_PAN] >> 2), -7, 7);
+    int32_t penv  = clampi((int32_t)v->pitchEnv + (md[DEST_PENV] >> 1), -48, 48);
+    int32_t atkOf = md[DEST_ATTACK] >> 1;
+    int32_t decOf = (md[DEST_DECAY] + md[DEST_DR]) >> 1;
+    int32_t relOf = (md[DEST_RELEASE] + md[DEST_DR]) >> 1;
+    uint32_t mix  = LEVEL_GAIN[level];
+
+    for (int k = 0; k < 4; k++) {
+        const Op *o   = &v->op[k];
+        int       isC = (car >> k) & 1;
+        int32_t coarse = clampi((int32_t)o->coarse + (isC ? 0 : ratOf), 0, 31);
+        int32_t det    = clampi((int32_t)o->detune + (isC ? 0 : detOf), -99, 99);
+        int32_t lv     = clampi((int32_t)o->level + (isC ? 0 : idxOf), 0, 99);
+
+        // Ratio x 256: coarse (0 = 0.5) x (1 + fine/100). Constant divisor.
+        uint32_t rq8 = ((coarse ? (uint32_t)coarse * 256u : 128u) * (100u + o->fine)) / 100u;
+        uint64_t inc = ((uint64_t)inc_for(pitchQ8 + ((det * 256) / 100)) * rq8) >> 8;
+        c->inc[k] = inc > 0x7FFFFFFFu ? 0x7FFFFFFFu : (uint32_t)inc;
+
+        uint32_t l = OP_LEVEL[lv];
+        if (isC) l = (((l * NORM[ncar]) >> 16) * mix) >> 16;
+        c->lvl[k] = l;
+
+        c->atk[k] = ENV_ATK[clampi((int32_t)o->env.atk + atkOf, 0, ENV_STEPS - 1)];
+        c->dec[k] = ENV_COEF[clampi((int32_t)o->env.dec + decOf, 0, ENV_STEPS - 1)];
+        c->sus[k] = (uint32_t)clampi(o->env.sus, 0, 15) * 4369u;
+        c->rel[k] = ENV_COEF[clampi((int32_t)o->env.rel + relOf, 0, ENV_STEPS - 1)];
+    }
+
+    c->algo      = algo;
+    c->fbAmt     = fb ? (1 << (8 + fb)) : 0;
+    c->pitchEnv  = penv;
+    c->pitchCoef = ENV_COEF[clampi(v->pitchTime, 1, ENV_STEPS - 1)];
+    c->gainL     = PAN_L[pan + 7];
+    c->gainR     = PAN_R[pan + 7];
+    c->gate      = (uint32_t)gate;
+    if (edge) c->noteOns = c->noteOns + 1;
+}
+
 // The pitch a melodic voice plays: its 0 V note, octave, master tuning and the matrix's PITCH
 // sum, quantised (the quantiser snaps the TARGET; portamento then slides to it, so a scale still
 // glides) and glided. FREE skips the quantiser, which is what lets a continuously-varying CV glide
 // smoothly.
-static int32_t melodic_pitch(int slot, const Voice *vc, const int32_t *md, uint8_t *noteOut)
+static int32_t g_target[FM_SLOTS + 1];     // each melodic voice's tracked pitch, before glide
+
+static int32_t melodic_pitch(int slot, uint8_t noteBase, int8_t octave, uint8_t glide,
+                             const int32_t *md, uint8_t *noteOut)
 {
     const Patch *p = &g_patch;
-    int32_t t = ((int32_t)vc->note << 8)
-              + ((int32_t)vc->octave * 12 << 8)
+    int32_t t = ((int32_t)noteBase << 8)
+              + ((int32_t)octave * 12 << 8)
               + (((int32_t)p->tuneCents * 256) / 100)                         // constant divisor
               + md[DEST_PITCH];
     t = clampi(t, (int32_t)NOTE_MIN << 8, (int32_t)NOTE_MAX << 8);
-    if (slot == FV_V1) g_pitchQ8 = t;
+    g_target[slot] = t;                      // before quantising: the CAL page's OUT reading
 
     uint8_t note = (uint8_t)clampi((t + 128) >> 8, 0, 127);
     if (p->scale != SCALE_FREE) {
@@ -433,7 +523,7 @@ static int32_t melodic_pitch(int slot, const Voice *vc, const int32_t *md, uint8
     }
     *noteOut = note;
 
-    int32_t g = clampi((int32_t)vc->glide + (md[DEST_GLIDE] >> 2), 0, 15);
+    int32_t g = clampi((int32_t)glide + (md[DEST_GLIDE] >> 2), 0, 15);
     if (g == 0) {
         g_voicePitch[slot] = t;
     } else {
@@ -461,9 +551,38 @@ static void synth_tick(void)
         int lvl = (g_btn & bit) != 0;
         int edg = (g_btnEdge & bit) != 0;
         int stp = (g_btnStep & bit) != 0;
-        Voice *v1 = &p->voice[FV_V1], *v2 = &p->voice[FV_V2];
+        Voice  *v1 = &p->voice[FV_V1], *v2 = &p->voice[FV_V2];
+        Voice4 *v4 = &p->v4;
+        uint8_t act = p->btnAct[b];
 
-        switch (p->btnAct[b]) {
+        // In 4-op mode the V1 actions play the 4-op voice. RATIO steps the ALGORITHM (there is no
+        // single ratio to step), INDEX moves every modulator's level, FB is operator 4's.
+        if (p->voiceMode == VMODE_4OP) {
+            int hit = 1;
+            switch (act) {
+            case ACT_OCTUP_V1: if (stp) v4->octave = (int8_t)clampi(v4->octave + 1, -3, 3); break;
+            case ACT_OCTDN_V1: if (stp) v4->octave = (int8_t)clampi(v4->octave - 1, -3, 3); break;
+            case ACT_RATUP_V1: if (stp) v4->algo = (uint8_t)clampi(v4->algo + 1, 0, FM4_ALGOS - 1); break;
+            case ACT_RATDN_V1: if (stp) v4->algo = (uint8_t)clampi(v4->algo - 1, 0, FM4_ALGOS - 1); break;
+            case ACT_IDXUP_V1: case ACT_IDXDN_V1:
+                if (stp) {
+                    int d = (act == ACT_IDXUP_V1) ? 3 : -3;
+                    uint8_t car = FM4_CARRIERS[v4->algo & 7];
+                    for (int k = 0; k < 4; k++)
+                        if (!((car >> k) & 1))
+                            v4->op[k].level = (uint8_t)clampi(v4->op[k].level + d, 0, 99);
+                }
+                break;
+            case ACT_FBUP_V1:  if (stp) v4->fb = (uint8_t)clampi(v4->fb + 1, 0, 7); break;
+            case ACT_FBDN_V1:  if (stp) v4->fb = (uint8_t)clampi(v4->fb - 1, 0, 7); break;
+            case ACT_PREUP_V1: if (stp) preset4_load(v4, v4->preset + 1 >= PRESET4_COUNT ? 0 : v4->preset + 1); break;
+            case ACT_PREDN_V1: if (stp) preset4_load(v4, v4->preset == 0 ? PRESET4_COUNT - 1 : v4->preset - 1); break;
+            default: hit = 0; break;
+            }
+            if (hit) continue;
+        }
+
+        switch (act) {
         case ACT_TRIG_V1:  btnLvl[0] |= lvl; btnEdge[0] |= edg; break;
         case ACT_TRIG_V2:  btnLvl[1] |= lvl; btnEdge[1] |= edg; break;
         case ACT_HOLD_V1:  if (edg) g_hold[0] = (uint8_t)!g_hold[0]; break;
@@ -486,6 +605,7 @@ static void synth_tick(void)
         case ACT_TRIG_DA:  drumBtn[0] |= edg; break;
         case ACT_TRIG_DB:  drumBtn[1] |= edg; break;
         case ACT_DRUMS:    if (edg) p->drumMode = (uint8_t)!p->drumMode; break;
+        case ACT_4OP:      if (edg) p->voiceMode = (uint8_t)(p->voiceMode == VMODE_4OP ? VMODE_2OP : VMODE_4OP); break;
         default: break;
         }
     }
@@ -576,14 +696,24 @@ static void synth_tick(void)
 
     // ---- the voices -------------------------------------------------------------------------------
     // An inactive slot still gets its parameters (it may be releasing) but no gate and no edge.
-    uint8_t n1 = 60, n2 = 60;
-    int32_t p1 = melodic_pitch(FV_V1, &p->voice[FV_V1], md[0], &n1);
-    voice_out(FV_V1, &p->voice[FV_V1], md[0], p1, lvl[0], edge[0]);
+    // In 4-op mode the 4-op voice takes V1's place - its gate, its pitch, its mappings - and V2 is
+    // off. The 2-op V1 and V2 slots are still computed, gated off, so they release naturally.
+    int four = p->voiceMode == VMODE_4OP;
+    const Voice *vv1 = &p->voice[FV_V1], *vv2 = &p->voice[FV_V2];
+    uint8_t n1 = 60, n2 = 60, n4 = 60;
+    int32_t p1 = melodic_pitch(FV_V1, vv1->note, vv1->octave, vv1->glide, md[0], &n1);
+    voice_out(FV_V1, vv1, md[0], p1, four ? 0 : lvl[0], four ? 0 : edge[0]);
     g_slotNote[FV_V1] = n1;
 
-    int32_t p2 = melodic_pitch(FV_V2, &p->voice[FV_V2], md[1], &n2);
-    voice_out(FV_V2, &p->voice[FV_V2], md[1], p2, drums ? 0 : lvl[1], drums ? 0 : edge[1]);
+    int v2on = !drums && !four;
+    int32_t p2 = melodic_pitch(FV_V2, vv2->note, vv2->octave, vv2->glide, md[1], &n2);
+    voice_out(FV_V2, vv2, md[1], p2, v2on ? lvl[1] : 0, v2on ? edge[1] : 0);
     g_slotNote[FV_V2] = n2;
+
+    const Voice4 *v4 = &p->v4;
+    int32_t p4 = melodic_pitch(GLIDE_4OP, v4->note, v4->octave, v4->glide, md[0], &n4);
+    voice4_out(v4, md[0], p4, four ? lvl[0] : 0, four ? edge[0] : 0);
+    g_pitchQ8 = g_target[four ? GLIDE_4OP : FV_V1];
 
     // Drums: struck at their own note, plus any PITCH mapped to V2 (so one CV can tune the kit);
     // no quantiser, no glide. Anything that would play V2 plays DRUM A; AU2 and its button are the
@@ -603,10 +733,14 @@ static void synth_tick(void)
         g_slotNote[slot] = (uint8_t)clampi((pq + 128) >> 8, 0, 127);
     }
 
-    g_fmActive = (1u << FV_V1) | (drums ? ((1u << FV_DRUM_A) | (1u << FV_DRUM_B)) : (1u << FV_V2));
+    g_fmActive = (four ? FM_ACTIVE_4OP : (1u << FV_V1))
+               | (drums ? ((1u << FV_DRUM_A) | (1u << FV_DRUM_B)) : (four ? 0u : (1u << FV_V2)));
 
+    // The main voice is what CV Out 2 / CV Out 1 follow: the 4-op voice in 4-op mode. Operator 1
+    // is a carrier in every algorithm, so its envelope stands for "still sounding".
+    if (four) n1 = n4;
     g_note = n1;
-    uint16_t envC = g_fmEnv[FV_V1][FM_CAR];
+    uint16_t envC = four ? g_fm4Env[0] : g_fmEnv[FV_V1][FM_CAR];
     g_anyNoteOn = (uint8_t)(lvl[0] || envC != 0);
 
     // ---- publish upstream: V1 is what CV Out 2 and CV Out 1 follow ------------------------------

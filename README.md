@@ -3,11 +3,12 @@
 <img src="docs/images/hero.png" alt="A Game Boy Advance linked to the Workshop Computer" width="420">
 
 A program card for the Music Thing Modular **Workshop Computer** that turns a **Game Boy Advance**
-into a **two-voice FM synth with a drum mode** for your modular.
+into an **FM synth for your modular**: two 2-operator voices, or one classic 4-operator voice, with a
+drum mode either way.
 
 The Workshop loads custom software onto the GBA through its link cable using the GBA's built-in
 **multiboot**, so you need no cartridge and no modifications. From then on, signals flow both ways:
-your CV, knobs and gates play two FM voices (or one voice and two drums), and the GBA sends its
+your CV, knobs and gates play the FM voices (and, if you like, two drums), and the GBA sends its
 notes, gates and buttons back to the rack. Sound comes out of the GBA's headphone jack in stereo,
 and the sound editor is on the GBA's own screen.
 
@@ -36,7 +37,7 @@ bells, electric pianos, plucks, basses, brass and a drum kit.
 
 1. Connect the GBA to the Workshop with the link cable. Leave the cartridge slot empty.
 2. Switch on the **Workshop Computer first**, then the **GBA**.
-3. The Workshop's LEDs light in sequence as the software loads (about six seconds).
+3. The Workshop's LEDs light in sequence as the software loads (about eight seconds).
 4. The GBA screen goes green, then shows the **PLAY** screen.
 5. Push the **Z switch down**. You should hear a note.
 
@@ -113,6 +114,20 @@ FM sounds are hard to build from nothing, so every voice has **presets** to star
 |---|---|
 | PLUCK, E.PIANO, BELL, TUBULAR, MARIMBA, VIBES, CLAV, GLASS, BASS, SUB BASS, BRASS, ORGAN, FLUTE, STRINGS, SAW LEAD, PAD | KICK, SNARE, CL HAT, OP HAT, TOM, RIM, COWBELL, METAL, ZAP, GONG |
 
+## 4-op mode
+
+Set **VOICE MODE** to **4-OP** on the SET page and the two 2-operator voices give way to **one
+4-operator voice** in the classic Yamaha style (DX21, TX81Z): four operators, each with its own
+ratio, level and envelope, arranged by one of **eight algorithms**, from a deep 4→3→2→1 stack to
+four sine waves side by side. It plays from Voice 1's inputs (CV In 2 and Pulse In 2), and drum mode
+still works alongside it.
+
+It has its own presets, in the DX tradition:
+
+| 4-op presets |
+|---|
+| E.PIANO, E.PIANO 2, BELL, TUBULAR, MARIMBA, VIBES, GLOCK, HARP, CLAV, BASS, SYN BASS, BRASS, STRINGS, PAD, ORGAN, FLUTE |
+
 ## Drum mode
 
 Turn on **DRUM MODE** on the SET page, or give it a button on the BTN page. Voice 2 steps aside and
@@ -151,12 +166,18 @@ Sixteen patch slots, stored on the Workshop Computer. **D-pad** picks a slot, **
 
 Pick a voice (Voice 1, Voice 2, Drum A, Drum B), then its preset, ratio, detune, index, feedback,
 noise, pitch envelope, note, octave and portamento. Choosing a preset loads it straight away, so
-scrolling the list auditions it.
+scrolling the list auditions it. In 4-op mode, Voice 1 is the 4-op voice: its preset, algorithm,
+operator 4's feedback, pitch envelope, note, octave and portamento.
 
 ### ENV: envelopes
 
 Two envelopes per voice: **MOD INDEX** (brightness over the note) and **CARRIER** (volume). Attack,
 decay, sustain and release, with the shape drawn as you edit it.
+
+For the 4-op voice this page becomes an **operator grid**, one column per operator: ratio, detune,
+level, attack, decay, sustain and release, with the algorithm drawn underneath. Carriers are shown
+in green. On the RATIO row, **A + Up/Down** changes the coarse ratio and **A + Left/Right** the
+fine.
 
 ### MIX: mixer
 
@@ -175,7 +196,8 @@ feedback, step through presets, hit a drum, or turn drum mode on and off.
 
 ### SET: settings
 
-Drum mode, which voice the Z switch plays, and the key, scale and tuning. Choose a scale to
+Voice mode (two 2-op voices or one 4-op voice), drum mode, which voice the Z switch plays, and the
+key, scale and tuning. Choose a scale to
 quantise everything you play, and CV Out 2 becomes a quantiser for the rest of your rack. **FREE**
 turns quantising off.
 

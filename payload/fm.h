@@ -55,5 +55,42 @@ extern volatile uint32_t  g_fmActive;        // bit per slot: may start notes
 // Published by the audio interrupt, for the screen: the current envelope levels, Q16.
 extern volatile uint16_t g_fmEnv[FM_SLOTS][2];
 
+// ---- the 4-operator voice ---------------------------------------------------------------------
+// One voice of four sine operators in one of the eight classic Yamaha 4-op algorithms (DX21 /
+// TX81Z / YM2151 numbering: operator 4 carries the feedback, operator 1 is always a carrier):
+//
+//   1: 4>3>2>1            2: (4+3)>2>1          3: (4 + 3>2)>1        4: (4>3 + 2)>1
+//   5: 4>3 + 2>1          6: 4>(3,2,1)          7: 4>3 + 2 + 1        8: 4 + 3 + 2 + 1
+//
+// It is rendered as a fifth slot alongside the four 2-op slots, gated by FM_ACTIVE_4OP in
+// g_fmActive, with the same release-don't-cut rule when the mode changes.
+#define FM4_OPS        4
+#define FM4_ALGOS      8
+#define FM_ACTIVE_4OP  (1u << 4)
+
+typedef struct {
+    uint32_t inc[FM4_OPS];        // per-operator phase increment, [0] = operator 1
+    uint32_t lvl[FM4_OPS];        // Q16 output level: modulators' depth (full = 8 pi), carriers'
+                                  // amplitude with the carrier-count normalisation and mixer
+                                  // level already folded in
+    uint32_t algo;                // 0..7 = algorithms 1..8
+    int32_t  fbAmt;               // operator 4 self-feedback multiplier, 0 = off
+    int32_t  pitchEnv;            // semitones, -48..+48
+    uint32_t pitchCoef;
+    uint32_t gainL, gainR;        // Q8 pan gains
+    uint32_t noteOns;
+    uint32_t gate;
+    uint32_t atk[FM4_OPS], dec[FM4_OPS], sus[FM4_OPS], rel[FM4_OPS];
+} Fm4Control;
+
+extern volatile Fm4Control g_fm4;
+extern volatile uint16_t   g_fm4Env[FM4_OPS];     // live envelope levels, for the screen
+
+// The algorithms as data, for the control layer (carrier normalisation) and the screen (the
+// diagram). The renderer does NOT read these - each algorithm is hand-written there for speed -
+// so the two must be kept in step; fm.c lists the eight bodies next to each other for that reason.
+extern const uint8_t FM4_CARRIERS[FM4_ALGOS];          // bit k = operator k+1 is a carrier
+extern const uint8_t FM4_MODS[FM4_ALGOS][FM4_OPS];      // [algo][op]: bit k = operator k+1 modulates it
+
 // AUDIO_BLOCK samples into each ring; called from the DMA interrupt only.
 void fm_render_block(int8_t *left, int8_t *right);

@@ -85,11 +85,19 @@ static int32_t clampi(int32_t v, int32_t lo, int32_t hi)
 }
 
 // Is this slot sounding in the current mode? V1 always; V2 or the drums.
+// Is this slot sounding in the current mode? V1 always (as the 2-op voice, or in 4-op mode as the
+// 4-op voice that takes its place); V2 only in 2-voice mode without drums; the drums in drum mode.
+static int is4op(void) { return g_patch.voiceMode == VMODE_4OP; }
+
 static int slot_live(int slot)
 {
     if (slot == FV_V1) return 1;
-    return g_patch.drumMode ? (slot >= FV_DRUM_A) : (slot == FV_V2);
+    if (g_patch.drumMode) return slot >= FV_DRUM_A;
+    return slot == FV_V2 && !is4op();
 }
+
+// Is the FM/ENV editor looking at the 4-op voice?
+static int sel4(void) { return is4op() && g_selVoice == FV_V1; }
 
 static void note_text(char *buf, int note)
 {
@@ -166,6 +174,18 @@ static int pct_at(char *buf, int at, uint32_t p16)
 #define FR_GLIDE  11
 #define FR_ROWS   12
 
+// FM page rows for the 4-op voice (see fm4_label)
+#define F4_VOICE   0
+#define F4_PRESET  1
+#define F4_ALGO    2
+#define F4_FB      3
+#define F4_PENV    4
+#define F4_PTIME   5
+#define F4_NOTE    6
+#define F4_OCTAVE  7
+#define F4_GLIDE   8
+#define F4_ROWS    9
+
 // MAP carries column headings above its rows, which need somewhere to live that is not on top
 // of the tab bar. It is the only page with that problem, so it is the only page that moves.
 static int list_top(int page)
@@ -176,11 +196,11 @@ static int list_top(int page)
 static int page_rows(int page)
 {
     switch (page) {
-    case PAGE_FM:  return FR_ROWS;
-    case PAGE_ENV: return 6;                   // VOICE, ENVELOPE, then A D S R
+    case PAGE_FM:  return sel4() ? F4_ROWS : FR_ROWS;
+    case PAGE_ENV: return sel4() ? 1 : 6;      // VOICE, ENVELOPE, then A D S R; 4-op: the grid
     case PAGE_MAP: return SRC_COUNT;
     case PAGE_BTN: return BTN_SLOTS;
-    case PAGE_SET: return 5;
+    case PAGE_SET: return 6;
     case PAGE_CAL: return 9;
     default:       return 1;                   // MEM and MIX: the page is a grid
     }
@@ -192,11 +212,68 @@ static int visible_rows(int page)
     return r < LIST_MAX ? r : LIST_MAX;
 }
 
+// ---- the 4-op voice's FM page ----------------------------------------------------------------
+// The voice-wide settings. The operators themselves are the ENV page's grid.
+
+static const char *fm4_label(int row)
+{
+    switch (row) {
+    case F4_VOICE:  return "VOICE";
+    case F4_PRESET: return "PRESET";
+    case F4_ALGO:   return "ALGORITHM";
+    case F4_FB:     return "OP4 FEEDBACK";
+    case F4_PENV:   return "PITCH ENV";
+    case F4_PTIME:  return "P.ENV TIME";
+    case F4_NOTE:   return "0V NOTE";
+    case F4_OCTAVE: return "OCTAVE";
+    default:        return "PORTAMENTO";
+    }
+}
+
+static void env_time_text(char *buf, int idx);
+static void note_text(char *buf, int note);
+
+static void fm4_value(int row, char *buf)
+{
+    const Voice4 *v = &g_patch.v4;
+    char tmp[8];
+    switch (row) {
+    case F4_VOICE:  scopy(buf, 0, "4-OP VOICE"); return;
+    case F4_PRESET: scopy(buf, 0, preset4_name(v->preset)); return;
+    case F4_ALGO:   dec_at(buf, 0, (uint32_t)v->algo + 1); return;
+    case F4_FB:     dec32(buf, v->fb, 1); return;
+    case F4_PENV:   sdec32(tmp, v->pitchEnv, 3); scopy(buf, scopy(buf, 0, tmp), " ST"); return;
+    case F4_PTIME:  env_time_text(buf, v->pitchTime); return;
+    case F4_NOTE:   note_text(buf, v->note); return;
+    case F4_OCTAVE: sdec32(buf, v->octave, 2); return;
+    default:        dec32(buf, v->glide, 2); return;
+    }
+}
+
+static void fm4_adjust(int row, int delta)
+{
+    Voice4 *v = &g_patch.v4;
+    switch (row) {
+    case F4_VOICE:  g_selVoice = (uint8_t)clampi(g_selVoice + delta, 0, FM_SLOTS - 1); return;
+    // Choosing a preset LOADS it, so browsing the list is auditioning it.
+    case F4_PRESET: preset4_load(v, (int)clampi(v->preset + delta, 0, PRESET4_COUNT - 1)); return;
+    case F4_ALGO:   v->algo = (uint8_t)clampi(v->algo + delta, 0, FM4_ALGOS - 1); return;
+    case F4_FB:     v->fb   = (uint8_t)clampi(v->fb + delta, 0, 7); return;
+    case F4_PENV:   v->pitchEnv  = (int8_t)clampi(v->pitchEnv + delta, -48, 48); return;
+    case F4_PTIME:  v->pitchTime = (uint8_t)clampi(v->pitchTime + delta, 1, ENV_STEPS - 1); return;
+    case F4_NOTE:   v->note = (uint8_t)clampi(v->note + (delta == 8 ? 12 : delta == -8 ? -12 : delta),
+                                              0, 120); return;
+    case F4_OCTAVE: v->octave = (int8_t)clampi(v->octave + delta, -3, 3); return;
+    default:        v->glide  = (uint8_t)clampi(v->glide + delta, 0, 15); return;
+    }
+}
+
 // ---- labels ------------------------------------------------------------------------------------
 static const char *field_label(int page, int row)
 {
     switch (page) {
     case PAGE_FM:
+        if (sel4()) return fm4_label(row);
         switch (row) {
         case FR_VOICE:  return "VOICE";
         case FR_PRESET: return "PRESET";
@@ -225,10 +302,11 @@ static const char *field_label(int page, int row)
     case PAGE_BTN: return btn_name[row % BTN_SLOTS];
     case PAGE_SET:
         switch (row) {
-        case 0: return "DRUM MODE";
-        case 1: return "SWITCH PLAYS";
-        case 2: return "SCALE";
-        case 3: return "KEY";
+        case 0: return "VOICE MODE";
+        case 1: return "DRUM MODE";
+        case 2: return "SWITCH PLAYS";
+        case 3: return "SCALE";
+        case 4: return "KEY";
         default: return "TUNING";
         }
     case PAGE_CAL:
@@ -274,6 +352,7 @@ static void field_value(int page, int row, char *buf)
 
     switch (page) {
     case PAGE_FM:
+        if (sel4()) { fm4_value(row, buf); return; }
         switch (row) {
         case FR_VOICE:
             // Name the voice, and say when it is not sounding in this mode - editing V2 while
@@ -323,10 +402,11 @@ static void field_value(int page, int row, char *buf)
     case PAGE_BTN: scopy(buf, 0, act_name[p->btnAct[row % BTN_SLOTS] % ACT_COUNT]); return;
     case PAGE_SET:
         switch (row) {
-        case 0: scopy(buf, 0, ONOFF[p->drumMode ? 1 : 0]); return;
-        case 1: scopy(buf, 0, sw_name[p->swTarget & 3]); return;
-        case 2: scopy(buf, 0, scale_name[p->scale % SCALE_COUNT]); return;
-        case 3: scopy(buf, 0, key_name[p->key % 12]); return;
+        case 0: scopy(buf, 0, is4op() ? "4-OP" : "2 VOICES"); return;
+        case 1: scopy(buf, 0, ONOFF[p->drumMode ? 1 : 0]); return;
+        case 2: scopy(buf, 0, sw_name[p->swTarget & 3]); return;
+        case 3: scopy(buf, 0, scale_name[p->scale % SCALE_COUNT]); return;
+        case 4: scopy(buf, 0, key_name[p->key % 12]); return;
         default: sdec32(buf, p->tuneCents, 3); return;
         }
     case PAGE_CAL:
@@ -367,6 +447,7 @@ static void field_adjust(int page, int row, int delta)
 
     switch (page) {
     case PAGE_FM:
+        if (sel4()) { fm4_adjust(row, delta); return; }
         switch (row) {
         case FR_VOICE:  g_selVoice = (uint8_t)clampi(g_selVoice + delta, 0, FM_SLOTS - 1); return;
         // Choosing a preset LOADS it, so browsing the list is auditioning it.
@@ -400,10 +481,11 @@ static void field_adjust(int page, int row, int delta)
     }
     case PAGE_SET:
         switch (row) {
-        case 0: p->drumMode = (uint8_t)(delta > 0); return;
-        case 1: p->swTarget = (uint8_t)clampi(p->swTarget + delta, 0, 3); return;
-        case 2: p->scale = (uint8_t)clampi(p->scale + delta, 0, SCALE_COUNT - 1); return;
-        case 3: p->key   = (uint8_t)clampi(p->key + delta, 0, 11); return;
+        case 0: p->voiceMode = (uint8_t)(delta > 0 ? VMODE_4OP : VMODE_2OP); return;
+        case 1: p->drumMode = (uint8_t)(delta > 0); return;
+        case 2: p->swTarget = (uint8_t)clampi(p->swTarget + delta, 0, 3); return;
+        case 3: p->scale = (uint8_t)clampi(p->scale + delta, 0, SCALE_COUNT - 1); return;
+        case 4: p->key   = (uint8_t)clampi(p->key + delta, 0, 11); return;
         default: p->tuneCents = (int8_t)clampi(p->tuneCents + delta, -50, 50); return;
         }
     case PAGE_CAL: {
@@ -488,10 +570,13 @@ static void play_frame(void)
 
     // One row per sounding voice: its tag, its preset, and a meter of what it is putting out
     // right now (amplitude envelope x level). V1 and V2, or V1 and the two drums.
+    // In 4-op mode the first row is the 4-op voice. Its meter is operator 1's envelope, which is
+    // a carrier in every algorithm.
     static uint8_t lastPreset[FM_SLOTS];
-    int drums = p->drumMode ? 1 : 0;
-    if (drums != g_playVoices) {
-        g_playVoices = drums;
+    int four  = is4op();
+    int shape = (p->drumMode ? 1 : 0) | (four << 1);
+    if (shape != g_playVoices) {
+        g_playVoices = shape;
         srect(10, PLAY_V_Y, SCREEN_W - 20, 3 * PLAY_V_ROW, COL_BG);
         for (int i = 0; i < FM_SLOTS; i++) lastPreset[i] = 0xFF;
     }
@@ -500,14 +585,17 @@ static void play_frame(void)
         if (!slot_live(s)) continue;
         int y = PLAY_V_Y + row * PLAY_V_ROW;
         row++;
-        const Voice *v = &p->voice[s];
-        if (v->preset != lastPreset[s]) {
-            lastPreset[s] = v->preset;
+        int      v4row  = four && s == FV_V1;
+        uint8_t  preset = v4row ? p->v4.preset : p->voice[s].preset;
+        uint8_t  level  = v4row ? p->v4.level  : p->voice[s].level;
+        uint16_t env    = v4row ? g_fm4Env[0]  : g_fmEnv[s][FM_CAR];
+        if (preset != lastPreset[s]) {
+            lastPreset[s] = preset;
             srect(10, y, 86, 9, COL_BG);
-            text(14, y, VOICE_TAG[s], COL_DIM, 1);
-            text(44, y, preset_name(v->preset), COL_MID, 1);
+            text(14, y, v4row ? "4OP" : VOICE_TAG[s], COL_DIM, 1);
+            text(44, y, v4row ? preset4_name(preset) : preset_name(preset), COL_MID, 1);
         }
-        int w = ((g_fmEnv[s][FM_CAR] >> 8) * v->level * 130) / (255 * 15);
+        int w = ((env >> 8) * level * 130) / (255 * 15);
         meter(98, y + 1, w, 130, s == FV_V1 ? COL_OK : COL_BAR);
         gfx_idle();
     }
@@ -515,13 +603,21 @@ static void play_frame(void)
     {
         static char last[40] = { 1, 0 };
         char tmp[12];
-        int at = scopy(buf, 0, "V1 RATIO ");
-        ratio_text(tmp, g_liveRatio[FV_V1]);
-        at = scopy(buf, at, tmp);
-        at = scopy(buf, at, "  INDEX ");
-        at = tenths_at(buf, at, g_liveIndex[FV_V1]);
-        at = scopy(buf, at, "  FB ");
-        dec_at(buf, at, p->voice[FV_V1].fb);
+        int at;
+        if (four) {
+            at = scopy(buf, 0, "4-OP  ALGORITHM ");
+            at = dec_at(buf, at, (uint32_t)p->v4.algo + 1);
+            at = scopy(buf, at, "  FB ");
+            dec_at(buf, at, p->v4.fb);
+        } else {
+            at = scopy(buf, 0, "V1 RATIO ");
+            ratio_text(tmp, g_liveRatio[FV_V1]);
+            at = scopy(buf, at, tmp);
+            at = scopy(buf, at, "  INDEX ");
+            at = tenths_at(buf, at, g_liveIndex[FV_V1]);
+            at = scopy(buf, at, "  FB ");
+            dec_at(buf, at, p->voice[FV_V1].fb);
+        }
         if (!streq(buf, last)) {
             scopy(last, 0, buf);
             srect(10, PLAY_INFO_Y, SCREEN_W - 20, 9, COL_BG);
@@ -744,37 +840,235 @@ static void edit_list(void)
 // keep their settings for when the mode comes back.
 static int g_mixCache[FM_SLOTS] = { -1, -1, -1, -1 };
 
+// The level and pan a MIX column edits: column 0 is the 4-op voice in 4-op mode, the 2-op V1
+// otherwise.
+static uint8_t *mix_level(int col) { return (col == 0 && is4op()) ? &g_patch.v4.level : &g_patch.voice[col & 3].level; }
+static int8_t  *mix_pan(int col)   { return (col == 0 && is4op()) ? &g_patch.v4.pan   : &g_patch.voice[col & 3].pan; }
+
 static void draw_mixer(void)
 {
     char buf[8];
 
     for (int i = 0; i < FM_SLOTS; i++) {
-        const Voice *v = &g_patch.voice[i];
-        int x    = 20 + i * 54;
-        int sel  = (i == g_mixCol);
-        int live = slot_live(i);
+        int x     = 20 + i * 54;
+        int sel   = (i == g_mixCol);
+        int live  = slot_live(i);
+        int four  = (i == 0 && is4op());
+        int level = *mix_level(i), pan = *mix_pan(i);
 
-        int c = (sel << 13) | (live << 12) | (v->level << 4) | (v->pan + 7);
+        int c = (four << 14) | (sel << 13) | (live << 12) | (level << 4) | (pan + 7);
         if (c != g_mixCache[i]) {
             g_mixCache[i] = c;
             rect(x - 4, 20, 48, 112, sel ? COL_PANEL : COL_BG);
-            text(x + 2, 22, VOICE_TAG[i], sel ? COL_SEL : (live ? COL_MID : COL_DIM), 1);
+            text(x + 2, 22, four ? "4OP" : VOICE_TAG[i], sel ? COL_SEL : (live ? COL_MID : COL_DIM), 1);
             rect(x + 5, 33, 18, 82, COL_DIM);
-            dec32(buf, v->level, 2);
+            dec32(buf, (uint32_t)level, 2);
             text(x + 6, 117, buf, sel ? COL_TITLE : COL_MID, 1);
-            pan_text(buf, v->pan);
+            pan_text(buf, pan);
             text(x + 6, 125, buf, live ? COL_OK : COL_DIM, 1);
         }
 
         // The fader in one overwriting pass: background above the set level, the set level, and
         // the live output inside it.
-        int hset  = (v->level * 78) / 15;
-        int hlive = live ? ((g_fmEnv[i][FM_CAR] >> 8) * hset) / 255 : 0;
+        uint16_t env = four ? g_fm4Env[0] : g_fmEnv[i][FM_CAR];
+        int hset  = (level * 78) / 15;
+        int hlive = live ? ((env >> 8) * hset) / 255 : 0;
         const int floorY = 114;
         rect(x + 6, 34, 16, 80 - hset, COL_BG);
         if (hset > hlive) rect(x + 6, floorY - hset, 16, hset - hlive, COL_MID);
         if (hlive > 0)    rect(x + 6, floorY - hlive, 16, hlive, COL_OK);
         gfx_idle();
+    }
+}
+
+// ---- the 4-op operator grid (ENV page, 4-op voice) ------------------------------------------------
+// Rows are parameters, columns are operators - every operator at once, as a DX's front panel
+// thinks of them. 108's CHAN grid, reborn: redrawn cell by cell, the cursor riding in each cell's
+// cache string so a move repaints two cells and nothing else.
+#define OG_RATIO   0
+#define OG_DETUNE  1
+#define OG_LEVEL   2
+#define OG_ATK     3
+#define OG_DEC     4
+#define OG_SUS     5
+#define OG_REL     6
+#define OG_ROWS    7
+
+#define OG_TOP    34
+#define OG_ROW    10
+#define OG_X0     62
+#define OG_W      44
+
+static const char *OG_LABEL[OG_ROWS] = {
+    "RATIO", "DETUNE", "LEVEL", "ATTACK", "DECAY", "SUSTAIN", "RELEASE"
+};
+
+static uint8_t g_opRow = 0, g_opCol = 0;
+static int     g_gridInit = 0;
+static int     g_gridHead = -1;
+static char    g_gridCache[OG_ROWS][4][12];
+
+// Ratio as coarse x (1 + fine/100), coarse 0 = 0.5, shown to two places: "1.41", "14.00".
+static void op_ratio_text(char *buf, const Op *o)
+{
+    uint32_t r100 = ((o->coarse ? (uint32_t)o->coarse * 100u : 50u) * (100u + o->fine)) / 100u;
+    int at = dec_at(buf, 0, r100 / 100u);                  // constant divisors
+    at = scopy(buf, at, ".");
+    if (r100 % 100u < 10u) at = scopy(buf, at, "0");
+    dec_at(buf, at, r100 % 100u);
+}
+
+static void op_cell(int r, int k, char *buf)
+{
+    const Op *o = &g_patch.v4.op[k & 3];
+    buf[0] = 0;
+    switch (r) {
+    case OG_RATIO:  op_ratio_text(buf, o); return;
+    case OG_DETUNE: sdec32(buf, o->detune, 3); return;
+    case OG_LEVEL:  dec_at(buf, 0, o->level); return;
+    case OG_ATK:    env_time_text(buf, o->env.atk); return;
+    case OG_DEC:    env_time_text(buf, o->env.dec); return;
+    case OG_SUS:    dec_at(buf, 0, o->env.sus); return;
+    default:        env_time_text(buf, o->env.rel); return;
+    }
+}
+
+static void op_adjust(int r, int k, int delta, int horizontal)
+{
+    Op *o = &g_patch.v4.op[k & 3];
+    switch (r) {
+    case OG_RATIO:
+        if (horizontal) o->fine   = (uint8_t)clampi(o->fine + (delta > 0 ? 1 : -1), 0, 99);
+        else            o->coarse = (uint8_t)clampi(o->coarse + delta, 0, 31);
+        return;
+    case OG_DETUNE: o->detune  = (int8_t)clampi(o->detune + delta, -99, 99); return;
+    case OG_LEVEL:  o->level   = (uint8_t)clampi(o->level + delta, 0, 99); return;
+    case OG_ATK:    o->env.atk = (uint8_t)clampi(o->env.atk + delta, 0, ENV_STEPS - 1); return;
+    case OG_DEC:    o->env.dec = (uint8_t)clampi(o->env.dec + delta, 0, ENV_STEPS - 1); return;
+    case OG_SUS:    o->env.sus = (uint8_t)clampi(o->env.sus + delta, 0, 15); return;
+    default:        o->env.rel = (uint8_t)clampi(o->env.rel + delta, 0, ENV_STEPS - 1); return;
+    }
+}
+
+static void draw_op_grid(void)
+{
+    char buf[12];
+    uint8_t car = FM4_CARRIERS[g_patch.v4.algo & 7];
+
+    if (!g_gridInit) {
+        g_gridInit = 1;
+        g_gridHead = -1;
+        rect_clear(0, LIST_TOP - 2, SCREEN_W, 106 - LIST_TOP, COL_BG);
+        for (int r = 0; r < OG_ROWS; r++) {
+            text(4, OG_TOP + r * OG_ROW, OG_LABEL[r], COL_DIM, 1);
+            for (int k = 0; k < 4; k++) g_gridCache[r][k][0] = 1;      // impossible: forces a draw
+        }
+    }
+
+    // The column heads say which operators are carriers (green) in the current algorithm, so
+    // they repaint when the algorithm changes.
+    if (car != g_gridHead) {
+        g_gridHead = car;
+        srect(0, LIST_TOP - 1, SCREEN_W, 9, COL_BG);
+        text(4, LIST_TOP, "OPERATOR", COL_DIM, 1);
+        for (int k = 0; k < 4; k++) {
+            char h[4] = { 'O', 'P', (char)('1' + k), 0 };
+            text(OG_X0 + k * OG_W, LIST_TOP, h, ((car >> k) & 1) ? COL_OK : COL_MID, 1);
+        }
+    }
+
+    for (int r = 0; r < OG_ROWS; r++) {
+        int y = OG_TOP + r * OG_ROW;
+        for (int k = 0; k < 4; k++) {
+            int sel = (r == g_opRow && k == g_opCol);
+            op_cell(r, k, buf);
+            char key[14];
+            int at = scopy(key, 0, buf);
+            key[at] = sel ? '*' : '.';
+            key[at + 1] = 0;
+            if (streq(key, g_gridCache[r][k])) continue;
+            scopy(g_gridCache[r][k], 0, key);
+
+            int x = OG_X0 + k * OG_W;
+            rect(x - 2, y - 1, OG_W - 2, OG_ROW - 1, sel ? COL_PANEL : COL_BG);
+            text(x, y, buf, sel ? COL_TITLE : COL_MID, 1);
+        }
+        gfx_idle();
+    }
+}
+
+// ---- the algorithm diagram -------------------------------------------------------------------
+// Operators as numbered boxes, signal flowing left to right, carriers filled green and wired to the
+// output bus on the right, operator 4 outlined orange when its feedback is on. Drawn from
+// FM4_MODS / FM4_CARRIERS, so it can never disagree with the tables the control layer uses.
+static int g_algShape = -1;
+
+// [algo][op] = { column, row } on a 4 x 4 grid.
+static const uint8_t ALG_POS[FM4_ALGOS][4][2] = {
+    { {3,1}, {2,1}, {1,1}, {0,1} },     // 1: 4>3>2>1
+    { {2,1}, {1,1}, {0,2}, {0,0} },     // 2: (4+3)>2>1
+    { {2,1}, {1,2}, {0,2}, {1,0} },     // 3: (4 + 3>2)>1
+    { {2,1}, {1,2}, {1,0}, {0,0} },     // 4: (4>3 + 2)>1
+    { {1,2}, {0,2}, {1,0}, {0,0} },     // 5: 4>3 + 2>1
+    { {1,2}, {1,1}, {1,0}, {0,1} },     // 6: 4>(3,2,1)
+    { {1,2}, {1,1}, {1,0}, {0,0} },     // 7: 4>3 + 2 + 1
+    { {0,3}, {0,2}, {0,1}, {0,0} },     // 8: 4 + 3 + 2 + 1
+};
+
+#define ALG_X0   64
+#define ALG_Y0  108
+#define ALG_DX   30
+#define ALG_DY    9
+#define ALG_BW   15
+#define ALG_BH    8
+#define ALG_BUS (ALG_X0 + 4 * ALG_DX)
+
+static void draw_alg(void)
+{
+    const Voice4 *v = &g_patch.v4;
+    int a = v->algo & 7;
+    int shape = (a << 1) | (v->fb ? 1 : 0);
+    if (shape == g_algShape) return;
+    g_algShape = shape;
+
+    rect(0, ALG_Y0 - 2, SCREEN_W, 4 * ALG_DY + 4, COL_BG);
+    char lbl[8];
+    dec_at(lbl, scopy(lbl, 0, "ALG "), (uint32_t)a + 1);
+    text(14, ALG_Y0 + 14, lbl, COL_TITLE, 1);
+
+    uint8_t car = FM4_CARRIERS[a];
+    int busTop = 999, busBot = -1;
+
+    // Wires first, so the boxes sit on top of their ends.
+    for (int t = 0; t < 4; t++) {
+        int tx = ALG_X0 + ALG_POS[a][t][0] * ALG_DX;
+        int ty = ALG_Y0 + ALG_POS[a][t][1] * ALG_DY + ALG_BH / 2;
+        for (int s = 0; s < 4; s++) {
+            if (!((FM4_MODS[a][t] >> s) & 1)) continue;
+            int sx = ALG_X0 + ALG_POS[a][s][0] * ALG_DX + ALG_BW;
+            int sy = ALG_Y0 + ALG_POS[a][s][1] * ALG_DY + ALG_BH / 2;
+            line(sx, sy, tx, ty, COL_DIM);
+        }
+        if ((car >> t) & 1) {
+            line(tx + ALG_BW, ty, ALG_BUS, ty, COL_OK);
+            if (ty < busTop) busTop = ty;
+            if (ty > busBot) busBot = ty;
+        }
+    }
+    if (busBot >= 0) {
+        line(ALG_BUS, busTop, ALG_BUS, busBot, COL_OK);
+        text(ALG_BUS + 4, (busTop + busBot) / 2 - 3, "OUT", COL_OK, 1);
+    }
+
+    for (int k = 0; k < 4; k++) {
+        int x = ALG_X0 + ALG_POS[a][k][0] * ALG_DX;
+        int y = ALG_Y0 + ALG_POS[a][k][1] * ALG_DY;
+        int isC = (car >> k) & 1;
+        uint16_t edge = (k == 3 && v->fb) ? COL_WAIT : (isC ? COL_OK : COL_DIM);
+        rect(x, y, ALG_BW, ALG_BH, edge);
+        rect(x + 1, y + 1, ALG_BW - 2, ALG_BH - 2, isC ? COL_OK : COL_BG);
+        char d[2] = { (char)('1' + k), 0 };
+        text(x + 5, y + 1, d, isC ? COL_BG : COL_MID, 1);
     }
 }
 
@@ -849,6 +1143,8 @@ static void invalidate(void)
     g_listVis  = 0;
     g_envShape = -1;
     g_memInit  = 0;
+    g_gridInit = 0;
+    g_algShape = -1;
     for (int i = 0; i < FM_SLOTS; i++) g_mixCache[i] = -1;
 }
 
@@ -901,15 +1197,32 @@ void ui_frame(void)
                 link_begin_load(g_slot);
 
         } else if (g_page == PAGE_MIX) {
-            Voice *v = &g_patch.voice[g_mixCol & 3];
+            uint8_t *lv = mix_level(g_mixCol);
+            int8_t  *pn = mix_pan(g_mixCol);
             if (!adj) {
                 if (steps & KEY_RIGHT) g_mixCol = (uint8_t)((g_mixCol + 1 >= FM_SLOTS) ? 0 : g_mixCol + 1);
                 if (steps & KEY_LEFT)  g_mixCol = (uint8_t)((g_mixCol == 0) ? FM_SLOTS - 1 : g_mixCol - 1);
             } else {
-                if (steps & KEY_UP)    v->level = (uint8_t)clampi(v->level + 1, 0, 15);
-                if (steps & KEY_DOWN)  v->level = (uint8_t)clampi(v->level - 1, 0, 15);
-                if (steps & KEY_RIGHT) v->pan   = (int8_t)clampi(v->pan + 1, -7, 7);
-                if (steps & KEY_LEFT)  v->pan   = (int8_t)clampi(v->pan - 1, -7, 7);
+                if (steps & KEY_UP)    *lv = (uint8_t)clampi(*lv + 1, 0, 15);
+                if (steps & KEY_DOWN)  *lv = (uint8_t)clampi(*lv - 1, 0, 15);
+                if (steps & KEY_RIGHT) *pn = (int8_t)clampi(*pn + 1, -7, 7);
+                if (steps & KEY_LEFT)  *pn = (int8_t)clampi(*pn - 1, -7, 7);
+            }
+
+        } else if (g_page == PAGE_ENV && sel4()) {
+            // The operator grid: the D-pad walks it the way it looks. A + Up/Down changes the cell;
+            // A + Left/Right changes it coarsely - except RATIO, where Up/Down is the coarse
+            // ratio and Left/Right the fine (DX7 order: coarse x (1 + fine/100)).
+            if (!adj) {
+                if (steps & KEY_DOWN)  g_opRow = (uint8_t)((g_opRow + 1 >= OG_ROWS) ? 0 : g_opRow + 1);
+                if (steps & KEY_UP)    g_opRow = (uint8_t)((g_opRow == 0) ? OG_ROWS - 1 : g_opRow - 1);
+                if (steps & KEY_RIGHT) g_opCol = (uint8_t)((g_opCol + 1 >= 4) ? 0 : g_opCol + 1);
+                if (steps & KEY_LEFT)  g_opCol = (uint8_t)((g_opCol == 0) ? 3 : g_opCol - 1);
+            } else {
+                if (steps & KEY_UP)    op_adjust(g_opRow, g_opCol, +1, 0);
+                if (steps & KEY_DOWN)  op_adjust(g_opRow, g_opCol, -1, 0);
+                if (steps & KEY_RIGHT) op_adjust(g_opRow, g_opCol, +8, 1);
+                if (steps & KEY_LEFT)  op_adjust(g_opRow, g_opCol, -8, 1);
             }
 
         } else if (g_page == PAGE_MAP) {
@@ -996,6 +1309,14 @@ void ui_frame(void)
             if (lastDrums != 0xFF && g_editMode) { g_editCacheValid = 0; for (int i = 0; i < FM_SLOTS; i++) g_mixCache[i] = -1; }
             lastDrums = g_patch.drumMode;
         }
+        // Voice mode changes the FM page's rows and turns ENV between a list and the operator
+        // grid, so whenever the 4-op voice comes into or out of view the page is drawn afresh.
+        static int lastSel4 = -1;
+        int s4 = sel4() | (is4op() << 1);
+        if (s4 != lastSel4) {
+            if (lastSel4 != -1 && g_editMode && !selecting) g_repaint = 1;
+            lastSel4 = s4;
+        }
     }
 
     if (g_repaint) {
@@ -1015,6 +1336,7 @@ void ui_frame(void)
         }
         else if (g_page == PAGE_MEM) draw_mem_page();
         else if (g_page == PAGE_MIX) draw_mixer();
+        else if (g_page == PAGE_ENV && sel4()) { draw_op_grid(); draw_alg(); }
         else {
             edit_list();
             if (g_page == PAGE_ENV) draw_env_graph(14, 104, 212, 38);

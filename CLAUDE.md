@@ -256,6 +256,28 @@ C-compatible (payload is C, firmware is C++): plain `#define` and `static inline
 - **The RATIO destination is read with hysteresis** (`stepped()` in synth.c), so a knob or CV
   parked on a boundary does not flicker the modulator between two ratios.
 
+## The 4-op voice (VOICE MODE 4-OP, 2026-10-25)
+
+- A fifth render slot (`FM_ACTIVE_4OP` in `g_fmActive`, `g_fm4`), taking V1's place: V1's gate,
+  pitch, V1-ticked mappings and V1 BTN actions drive it; V2 is off; drums still work. The 2-op V1
+  keeps being computed with its gate low, so mode changes release rather than cut.
+- **The eight algorithms are HAND-WRITTEN TWICE**: as `ALG1..ALG8` loop bodies in `fm.c` (speed —
+  one loop copy per algorithm, picked per block) and as `FM4_MODS` / `FM4_CARRIERS` tables (control
+  layer's carrier normalisation, the ENV diagram, the model). They must agree. The scratchpad model
+  (`fm4_model.py`) parses both and asserts they match; re-run it after touching either.
+- Operator level is DX-style 0..99 at 0.75 dB/step (`OP_LEVEL`); modulator full scale = 8π, as in
+  the 2-op voice. Ratio = coarse × (1 + fine/100), coarse 0 = 0.5.
+- **Carriers are normalised by 1/sqrt(count)** in `voice4_out()`. 1/count was tried first: never
+  clipped, but ORGAN and the alg-5 pianos came out 6–9 dB quieter than BASS. With 1/sqrt the 4-op
+  presets peak 80–123 of 127 at level 14, none saturating.
+- Two 4-op presets needed fixing after measurement: SYN BASS (levels 80/72/66 + fb 5 tipped the
+  stack into noise — brighter AFTER the attack) and PAD (carriers set too low).
+- `melodic_pitch()` takes note/octave/glide rather than a `Voice*` so the 4-op voice can use it;
+  it records each voice's target in `g_target[]` and the tick sets `g_pitchQ8` ONCE from the
+  active main voice. (A first draft called it twice for V1 to restore g_pitchQ8 — that would have
+  run V1's glide at double speed.)
+- Upload is now 51 KB / ~7.7 s. The eight loop copies and the grid UI are most of the growth.
+
 ## The matrix, the buttons and drum mode
 
 - **108's matrix model, FM destinations.** One mapping per source (CV1 CV2 AU1 AU2 PU2 MAIN X Y),
@@ -292,14 +314,16 @@ C-compatible (payload is C, firmware is C++): plain `#define` and `static inline
 sector shared by whichever GBA program is running, so a 108 patch can sit in a slot this program
 loads. The different magic makes it a clean `BAD DATA - NOT LOADED` instead of a misread.
 
-**`PATCH_VERSION` (now 2) is checked, not assumed, and must be bumped whenever a stored field
+**`PATCH_VERSION` (now 3) is checked, not assumed, and must be bumped whenever a stored field
 changes its LAYOUT *or* its MEANING.** A layout change cannot be recovered from the bytes, so
 `synth_patch_valid()` rejects it; a change of meaning at the same layout should be migrated in
 place by `synth_patch_migrate()`, called after the byte copy and **before**
 `synth_patch_applied()`. Prefer migrating: a bump that throws away saved patches is a last resort.
-`sizeof(Patch)` is 132 of the 256-byte slot; `patch_fits_a_slot` in `synth.c` is the backstop.
+`sizeof(Patch)` is 178 of the 256-byte slot; `patch_fits_a_slot` in `synth.c` is the backstop.
 v2 (four voices, matrix, buttons, mixer) is a layout change: v1 patches from the single-voice beta
-are rejected, which was acceptable because v1 was never released.
+are rejected, which was acceptable because v1 was never released. **v3 (the 4-op voice) only
+APPENDED fields**, so v2 is migrated: a v2 slot arrives zero-padded past its end, and the migration
+gives the zeroed 4-op voice the factory one (an all-zero 4-op voice is silent). KEEP APPENDING.
 
 **Presets are SOUNDS, not voices**: `preset_load()` replaces ratio … envelopes (and the note, for
 drum presets) and keeps level, pan, octave and portamento, so browsing never moves the mix. Each

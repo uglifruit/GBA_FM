@@ -199,6 +199,172 @@ static IWRAM_CODE void render_voice(VoiceState *s, uint32_t ci, uint32_t mi, int
     s->amp[FM_CAR] = cTo;
 }
 
+// ---- the 4-operator voice -------------------------------------------------------------------
+volatile Fm4Control g_fm4;
+volatile uint16_t   g_fm4Env[FM4_OPS];
+
+//                                              alg:  1     2     3     4     5     6     7     8
+const uint8_t FM4_CARRIERS[FM4_ALGOS]          = { 0x1,  0x1,  0x1,  0x1,  0x5,  0x7,  0x7,  0xF };
+const uint8_t FM4_MODS[FM4_ALGOS][FM4_OPS] = {   // [algo][op1..op4]: which operators modulate it
+    { 0x2, 0x4, 0x8, 0 },     // 1: 4>3>2>1
+    { 0x2, 0xC, 0,   0 },     // 2: (4+3)>2>1
+    { 0xA, 0x4, 0,   0 },     // 3: (4 + 3>2)>1
+    { 0x6, 0,   0x8, 0 },     // 4: (4>3 + 2)>1
+    { 0x2, 0,   0x8, 0 },     // 5: 4>3 + 2>1
+    { 0x8, 0x8, 0x8, 0 },     // 6: 4>(3,2,1)
+    { 0,   0,   0x8, 0 },     // 7: 4>3 + 2 + 1
+    { 0,   0,   0,   0 },     // 8: 4 + 3 + 2 + 1
+};
+
+typedef struct {
+    int32_t  env[FM4_OPS];
+    uint32_t stage[FM4_OPS];
+    uint32_t seenOns;
+    uint32_t ph[FM4_OPS];
+    int32_t  fb1, fb2;
+    int32_t  amp[FM4_OPS];
+    int32_t  pe;
+} Voice4State;
+
+static IWRAM_BSS Voice4State s_v4;
+
+// Operator k's sample, the phase offset it hands on as a modulator, and its contribution as a
+// carrier. All three are the 2-op voice's scales: a modulator's sine x Q16 depth, "<< 3", is up to
+// four whole cycles (8 pi); a carrier's sine x Q16 amplitude ">> 16" is +-32767. Two modulators
+// feeding one operator simply add their offsets: the sum wraps modulo 2^32, which is modulo one
+// cycle, which is exactly right for a phase.
+#define OP4_S(p)      SINE256[(p) >> 24]
+#define OP4_M(s, a)   ((uint32_t)((s) * (a)) << 3)
+#define OP4_O(s, a)   (((s) * (a)) >> 16)
+
+// One sample of each algorithm. Operator 4 has always been computed first (it carries the
+// feedback), into s4/m4. KEEP THESE IN STEP WITH FM4_MODS / FM4_CARRIERS ABOVE.
+#define ALG1  { int32_t s3 = OP4_S(p3 + m4);                 uint32_t m3 = OP4_M(s3, a3);          \
+                int32_t s2 = OP4_S(p2 + m3);                 uint32_t m2 = OP4_M(s2, a2);          \
+                int32_t s1 = OP4_S(p1 + m2);                 o = OP4_O(s1, a1); }
+#define ALG2  { int32_t s3 = OP4_S(p3);                      uint32_t m3 = OP4_M(s3, a3);          \
+                int32_t s2 = OP4_S(p2 + m3 + m4);            uint32_t m2 = OP4_M(s2, a2);          \
+                int32_t s1 = OP4_S(p1 + m2);                 o = OP4_O(s1, a1); }
+#define ALG3  { int32_t s3 = OP4_S(p3);                      uint32_t m3 = OP4_M(s3, a3);          \
+                int32_t s2 = OP4_S(p2 + m3);                 uint32_t m2 = OP4_M(s2, a2);          \
+                int32_t s1 = OP4_S(p1 + m2 + m4);            o = OP4_O(s1, a1); }
+#define ALG4  { int32_t s3 = OP4_S(p3 + m4);                 uint32_t m3 = OP4_M(s3, a3);          \
+                int32_t s2 = OP4_S(p2);                      uint32_t m2 = OP4_M(s2, a2);          \
+                int32_t s1 = OP4_S(p1 + m3 + m2);            o = OP4_O(s1, a1); }
+#define ALG5  { int32_t s3 = OP4_S(p3 + m4);                                                       \
+                int32_t s2 = OP4_S(p2);                      uint32_t m2 = OP4_M(s2, a2);          \
+                int32_t s1 = OP4_S(p1 + m2);                 o = OP4_O(s3, a3) + OP4_O(s1, a1); }
+#define ALG6  { int32_t s3 = OP4_S(p3 + m4);                                                       \
+                int32_t s2 = OP4_S(p2 + m4);                                                       \
+                int32_t s1 = OP4_S(p1 + m4);                                                       \
+                o = OP4_O(s3, a3) + OP4_O(s2, a2) + OP4_O(s1, a1); }
+#define ALG7  { int32_t s3 = OP4_S(p3 + m4);                                                       \
+                int32_t s2 = OP4_S(p2);                                                            \
+                int32_t s1 = OP4_S(p1);                                                            \
+                o = OP4_O(s3, a3) + OP4_O(s2, a2) + OP4_O(s1, a1); }
+#define ALG8  { int32_t s3 = OP4_S(p3);                                                            \
+                int32_t s2 = OP4_S(p2);                                                            \
+                int32_t s1 = OP4_S(p1);                                                            \
+                o = OP4_O(s4, a4) + OP4_O(s3, a3) + OP4_O(s2, a2) + OP4_O(s1, a1); }
+
+// The block loop around one algorithm's sample. Amplitudes ramp per word, as the 2-op voice's do.
+// The carriers' amplitudes are normalised by 1/sqrt(count) (control layer), so o can exceed
+// +-32767 when carriers peak together - at most +-65534 with four at full level, which the int32
+// mix carries comfortably before it saturates.
+#define FM4_LOOP(BODY)                                                                     \
+    for (int w = 0; w < AUDIO_BLOCK / 4; w++) {                                            \
+        for (int k = 0; k < 4; k++) {                                                      \
+            int32_t  s4 = OP4_S(p4 + (uint32_t)((f1 + f2) * fbAmt));                       \
+            uint32_t m4 = OP4_M(s4, a4);                                                   \
+            int32_t  o;                                                                    \
+            f2 = f1;                                                                       \
+            f1 = s4;                                                                       \
+            BODY                                                                           \
+            (void)m4;                                                                      \
+            *out++ = o;                                                                    \
+            p1 += i1; p2 += i2; p3 += i3; p4 += i4;                                        \
+        }                                                                                  \
+        a1 += st1; a2 += st2; a3 += st3; a4 += st4;                                        \
+    }
+
+// One copy of the loop per algorithm, chosen once per block: a switch per sample would cost more
+// than an operator does.
+static IWRAM_CODE void render_4op(Voice4State *s, const uint32_t *inc, int32_t fbAmt,
+                                  uint32_t algo, const int32_t *to, int32_t *out)
+{
+    uint32_t p1 = s->ph[0], p2 = s->ph[1], p3 = s->ph[2], p4 = s->ph[3];
+    uint32_t i1 = inc[0], i2 = inc[1], i3 = inc[2], i4 = inc[3];
+    int32_t  a1 = s->amp[0], a2 = s->amp[1], a3 = s->amp[2], a4 = s->amp[3];
+    int32_t  st1 = (to[0] - a1) >> 2, st2 = (to[1] - a2) >> 2;
+    int32_t  st3 = (to[2] - a3) >> 2, st4 = (to[3] - a4) >> 2;
+    int32_t  f1 = s->fb1, f2 = s->fb2;
+
+    switch (algo) {
+    case 0:  FM4_LOOP(ALG1) break;
+    case 1:  FM4_LOOP(ALG2) break;
+    case 2:  FM4_LOOP(ALG3) break;
+    case 3:  FM4_LOOP(ALG4) break;
+    case 4:  FM4_LOOP(ALG5) break;
+    case 5:  FM4_LOOP(ALG6) break;
+    case 6:  FM4_LOOP(ALG7) break;
+    default: FM4_LOOP(ALG8) break;
+    }
+
+    s->ph[0] = p1; s->ph[1] = p2; s->ph[2] = p3; s->ph[3] = p4;
+    s->fb1 = f1;
+    s->fb2 = f2;
+    for (int k = 0; k < FM4_OPS; k++) s->amp[k] = to[k];   // land exactly, as render_voice does
+}
+
+// Control rate for the 4-op voice, then render into vo[]. Returns 0 if it is silent and was
+// skipped (its carriers idle and at zero amplitude).
+static IWRAM_CODE int voice4_block(int live, int32_t *vo)
+{
+    Voice4State        *s = &s_v4;
+    volatile Fm4Control *c = &g_fm4;
+
+    uint32_t ons  = c->noteOns;
+    int      trig = live && (ons != s->seenOns);
+    s->seenOns = ons;
+    int      gate = live && c->gate != 0;
+    uint32_t algo = c->algo & 7;
+    uint32_t car  = FM4_CARRIERS[algo];
+
+    int silent = !trig;
+    for (int k = 0; k < FM4_OPS && silent; k++)
+        if ((car >> k) & 1) silent = (s->stage[k] == ENV_IDLE && s->amp[k] == 0);
+    if (silent) {
+        for (int k = 0; k < FM4_OPS; k++) g_fm4Env[k] = 0;
+        return 0;
+    }
+
+    int32_t  to[FM4_OPS];
+    uint32_t inc[FM4_OPS];
+    for (int k = 0; k < FM4_OPS; k++) {
+        env_step(&s->env[k], &s->stage[k], trig, gate, c->atk[k], c->dec[k],
+                 (int32_t)c->sus[k], c->rel[k]);
+        g_fm4Env[k] = (uint16_t)s->env[k];
+        to[k]  = (int32_t)(((uint32_t)s->env[k] * c->lvl[k]) >> 16);
+        inc[k] = c->inc[k];
+    }
+
+    int32_t depth = c->pitchEnv;
+    if (depth) {
+        if (trig) s->pe = ENV_TOP;
+        else {
+            s->pe = (int32_t)(((uint32_t)s->pe * c->pitchCoef) >> 16);
+            if (s->pe < ENV_SNAP) s->pe = 0;
+        }
+        if (s->pe) {
+            uint32_t mul = pitch_mul((s->pe * depth) >> 8);
+            for (int k = 0; k < FM4_OPS; k++) inc[k] = scale_inc(inc[k], mul);
+        }
+    }
+
+    render_4op(s, inc, c->fbAmt, algo, to, vo);
+    return 1;
+}
+
 IWRAM_CODE void fm_render_block(int8_t *left, int8_t *right)
 {
     int32_t accL[AUDIO_BLOCK], accR[AUDIO_BLOCK], vo[AUDIO_BLOCK];
@@ -260,6 +426,15 @@ IWRAM_CODE void fm_render_block(int8_t *left, int8_t *right)
         render_voice(s, ci, mi, c->fbAmt, c->noise, mTo, cTo, vo);
 
         int32_t gl = (int32_t)c->gainL, gr = (int32_t)c->gainR;
+        for (int i = 0; i < AUDIO_BLOCK; i++) {
+            accL[i] += vo[i] * gl;
+            accR[i] += vo[i] * gr;
+        }
+    }
+
+    // ---- the 4-operator voice ----
+    if (voice4_block((active & FM_ACTIVE_4OP) != 0, vo)) {
+        int32_t gl = (int32_t)g_fm4.gainL, gr = (int32_t)g_fm4.gainR;
         for (int i = 0; i < AUDIO_BLOCK; i++) {
             accL[i] += vo[i] * gl;
             accR[i] += vo[i] * gr;

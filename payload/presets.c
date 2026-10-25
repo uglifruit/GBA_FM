@@ -59,6 +59,147 @@ static const Preset PRESET[PRESET_COUNT] = {
     { "GONG",        6,  0, 45, 3, 0,   0,  0, 40, {  6, 28,  4, 28 }, {  4, 30,  0, 30 } },
 };
 
+// ---- the 4-op voice's presets ----------------------------------------------------------------
+// Classic 4-op recipes in the DX21/TX81Z style. Operators are listed op1, op2, op3, op4, each
+// { coarse, fine, detune, level, { a, d, s, r } }; ratio = coarse x (1 + fine/100), coarse 0 =
+// 0.5; level is 0..99 at 0.75 dB per step. Algorithms are stored 0..7 for 1..8 (see fm.h):
+//   alg 5 (4>3 + 2>1) is the workhorse - two independent pairs, e.g. a piano's tine and body;
+//   alg 8 is additive, an organ's drawbars; alg 1/2 are deep stacks for brass and bass.
+typedef struct {
+    const char *name;
+    uint8_t algo, fb;
+    int8_t  pitchEnv;
+    uint8_t pitchTime;
+    Op      op[4];
+} Preset4;
+
+static const Preset4 PRESET4[PRESET4_COUNT] = {
+    // E.PIANO: the classic DX tine. Pair 2>1 is the body, 4>3 the bright "ding" (op4 at 14x,
+    // gone in 75 ms); carriers detuned apart for a little chorus.
+    { "E.PIANO", 4, 0, 0, 0, {
+        { 1,  0,  3, 99, {  0, 26,  0, 20 } },
+        { 1,  0,  0, 72, {  0, 23,  2, 18 } },
+        { 1,  0, -3, 85, {  0, 19,  0, 15 } },
+        { 14, 0,  0, 70, {  0, 14,  0, 12 } } } },
+    // E.PIANO 2: harder, brighter tine and a stronger body bark.
+    { "E.PIANO 2", 4, 0, 0, 0, {
+        { 1,  0,  2, 99, {  0, 26,  0, 20 } },
+        { 1,  0,  0, 78, {  0, 22,  3, 18 } },
+        { 1,  0, -2, 90, {  0, 20,  0, 16 } },
+        { 14, 0,  0, 78, {  0, 15,  0, 12 } } } },
+    // BELL: two inharmonic pairs (3.5x and 5.64x) ringing out over seconds.
+    { "BELL", 4, 0, 0, 0, {
+        { 1,  0,  0, 99, {  0, 30,  0, 28 } },
+        { 3, 50,  0, 80, {  0, 28,  0, 26 } },
+        { 1,  0,  5, 90, {  0, 27,  0, 25 } },
+        { 4, 41,  0, 75, {  0, 26,  0, 24 } } } },
+    // TUBULAR: a struck tube - 3.5x for the clang, a long bright decay.
+    { "TUBULAR", 4, 0, 0, 0, {
+        { 1,  0,  0, 99, {  0, 30,  0, 28 } },
+        { 3, 50,  0, 76, {  0, 27,  2, 25 } },
+        { 1,  0,  3, 85, {  0, 28,  0, 26 } },
+        { 7,  0,  0, 65, {  0, 24,  0, 22 } } } },
+    // MARIMBA: woody 4x partial that dies fast over a sine body.
+    { "MARIMBA", 4, 0, 0, 0, {
+        { 1,  0,  0, 99, {  0, 22,  0, 20 } },
+        { 4,  0,  0, 72, {  0, 10,  0, 10 } },
+        { 4,  0,  0, 80, {  0, 18,  0, 16 } },
+        { 10, 0,  0, 60, {  0,  8,  0,  8 } } } },
+    // VIBES: soft 4x shimmer, the second pair slightly detuned for a slow beat.
+    { "VIBES", 4, 0, 0, 0, {
+        { 1,  0,  0, 99, {  0, 28,  0, 26 } },
+        { 4,  0,  0, 60, {  0, 20,  0, 20 } },
+        { 1,  0,  4, 85, {  0, 28,  0, 26 } },
+        { 4,  0,  0, 55, {  0, 18,  0, 18 } } } },
+    // GLOCK: high, glassy, short.
+    { "GLOCK", 4, 0, 0, 0, {
+        { 2,  0,  0, 99, {  0, 25,  0, 23 } },
+        { 7,  0,  0, 70, {  0, 15,  0, 15 } },
+        { 5,  0,  0, 85, {  0, 22,  0, 20 } },
+        { 14, 0,  0, 60, {  0, 10,  0, 10 } } } },
+    // HARP: plucked, an octave partial on the second pair.
+    { "HARP", 4, 0, 0, 0, {
+        { 1,  0,  0, 99, {  0, 25,  0, 23 } },
+        { 2,  0,  0, 70, {  0, 18,  0, 18 } },
+        { 1,  0,  0, 92, {  0, 24,  0, 22 } },
+        { 4,  0,  0, 62, {  0, 14,  0, 14 } } } },
+    // CLAV: nasal 3x and 6x, short and percussive.
+    { "CLAV", 4, 0, 0, 0, {
+        { 1,  0,  0, 99, {  0, 21,  6, 12 } },
+        { 3,  0,  0, 80, {  0, 15,  2, 12 } },
+        { 1,  0,  0, 85, {  0, 20,  4, 12 } },
+        { 6,  0,  0, 70, {  0, 12,  0, 10 } } } },
+    // BASS: punchy - alg 4, with a fed-back 3x into op3 for growl.
+    { "BASS", 3, 5, 0, 0, {
+        { 1,  0,  0, 99, {  0, 22, 10, 14 } },
+        { 1,  0,  0, 75, {  0, 18,  4, 14 } },
+        { 1,  0,  0, 70, {  0, 16,  2, 12 } },
+        { 3,  0,  0, 60, {  0, 14,  0, 12 } } } },
+    // SYN BASS: a full stack with feedback - thick, saw-like, the filter sweep in the envelopes.
+    // (Levels 80/72/66 with feedback 5 tipped the stack into noise: it measured BRIGHTER after the
+    // attack than during it.)
+    { "SYN BASS", 0, 4, 0, 0, {
+        { 1,  0,  0, 99, {  0, 22, 11, 14 } },
+        { 1,  0,  0, 74, {  0, 19,  6, 14 } },
+        { 1,  0,  0, 64, {  0, 17,  4, 14 } },
+        { 1,  0,  0, 58, {  0, 15,  2, 12 } } } },
+    // BRASS: alg 2, two modulators into one, swelling in behind the carrier.
+    { "BRASS", 1, 5, 0, 0, {
+        { 1,  0,  0, 99, { 10, 22, 12, 18 } },
+        { 1,  0,  3, 78, { 14, 22, 10, 18 } },
+        { 1,  0, -3, 65, { 16, 20,  8, 18 } },
+        { 1,  0,  0, 60, { 16, 20,  8, 18 } } } },
+    // STRINGS: two identical 1:1 pairs detuned +-6 cents, slow attack - ensemble from detuning.
+    { "STRINGS", 4, 3, 0, 0, {
+        { 1,  0,  6, 95, { 23, 24, 13, 24 } },
+        { 1,  0,  0, 70, { 22, 24, 12, 24 } },
+        { 1,  0, -6, 95, { 23, 24, 13, 24 } },
+        { 1,  0,  0, 70, { 22, 24, 12, 24 } } } },
+    // PAD: alg 6, one modulator into three detuned carriers at 1x, 2x and 0.5x.
+    { "PAD", 5, 2, 0, 0, {
+        { 1,  0,  0, 99, { 26, 26, 13, 27 } },
+        { 2,  0,  7, 96, { 26, 26, 13, 27 } },
+        { 0,  0, -7, 94, { 26, 26, 13, 27 } },
+        { 1,  0,  0, 65, { 27, 26, 10, 27 } } } },
+    // ORGAN: alg 8, four drawbars - 16' (0.5x), 8', 4', 2' - with a little feedback grit on the 2'.
+    { "ORGAN", 7, 3, 0, 0, {
+        { 1,  0,  0, 99, {  2, 10, 15,  8 } },
+        { 0,  0,  0, 92, {  2, 10, 15,  8 } },
+        { 2,  0,  0, 92, {  2, 10, 15,  8 } },
+        { 4,  0,  0, 88, {  2, 10, 15,  8 } } } },
+    // FLUTE: alg 4; operator 4 at full feedback is a NOISE source - breath - into op3.
+    { "FLUTE", 3, 7, 0, 0, {
+        { 1,  0,  0, 99, { 12, 20, 13, 18 } },
+        { 1,  0,  0, 55, { 12, 20, 10, 18 } },
+        { 3,  0,  0, 50, { 12, 20, 10, 18 } },
+        { 1,  0,  0, 45, { 10, 20,  8, 18 } } } },
+};
+
+const char *preset4_name(int i)
+{
+    if (i < 0 || i >= PRESET4_COUNT) return "---";
+    return PRESET4[i].name;
+}
+
+void preset4_load(Voice4 *v, int i)
+{
+    if (i < 0 || i >= PRESET4_COUNT) return;
+    const Preset4 *p = &PRESET4[i];
+    v->preset    = (uint8_t)i;
+    v->algo      = p->algo;
+    v->fb        = p->fb;
+    v->pitchEnv  = p->pitchEnv;
+    v->pitchTime = p->pitchTime;
+    // Field by field: a struct copy would be a memcpy call, which -nostdlib cannot resolve.
+    for (int k = 0; k < 4; k++) {
+        const Op *s = &p->op[k];
+        Op *d = &v->op[k];
+        d->coarse = s->coarse; d->fine = s->fine; d->detune = s->detune; d->level = s->level;
+        d->env.atk = s->env.atk; d->env.dec = s->env.dec;
+        d->env.sus = s->env.sus; d->env.rel = s->env.rel;
+    }
+}
+
 const char *preset_name(int i)
 {
     if (i < 0 || i >= PRESET_COUNT) return "---";

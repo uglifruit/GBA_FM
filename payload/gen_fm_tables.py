@@ -16,6 +16,7 @@ is computed here instead and baked in:
   PITCH_MUL    Q16 frequency multiplier for -48..+49 semitones (one guard entry), for the
                pitch envelope: the renderer interpolates it linearly per block.
   LEVEL_GAIN   the mixer's level law: 2.5 dB per step, not linear.
+  OP_LEVEL     the 4-op operator level law, DX-style: 0.75 dB per step, 0..99.
   PAN_L/PAN_R  constant-power pan gains, Q8, for pan -7..+7. Centre is 181/256 (-3 dB) per
                side, so two centred voices at full level sum to about 1.4x one - the mixer
                saturates rather than wraps, and the MIX page is where that headroom is set.
@@ -165,6 +166,14 @@ def main():
         f.write("// Mixer level law, Q16: 0 = off, then 2.5 dB per step up to 15 = 0 dB.\n")
         f.write("static const uint16_t LEVEL_GAIN[16] = {\n")
         f.write(rows(lvl, 8, "%5d") + "\n};\n\n")
+
+        # 4-op operator output level 0..99, DX-style: 0.75 dB per step, 99 = full scale, 0 = off.
+        # For a modulator full scale is 8 pi radians of deviation, so 91 is ~12.6 rad, 83 ~6.3,
+        # 75 ~3.1, 67 ~1.6: the useful range sits where DX programmers expect it, 60-95.
+        opl = [0] + [min(65535, int(round(65536 * 10 ** (-(99 - l) * 0.75 / 20)))) for l in range(1, 100)]
+        f.write("// 4-op operator level 0..99, Q16: 0 = off, then 0.75 dB per step up to 99 = full scale.\n")
+        f.write("static const uint16_t OP_LEVEL[100] = {\n")
+        f.write(rows(opl, 10, "%5d") + "\n};\n\n")
 
         pan_l, pan_r = [], []
         for p in range(-7, 8):

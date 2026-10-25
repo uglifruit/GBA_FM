@@ -96,7 +96,8 @@ typedef struct {
 #define ACT_TRIG_DA  19
 #define ACT_TRIG_DB  20
 #define ACT_DRUMS    21
-#define ACT_COUNT    22
+#define ACT_4OP      22    // appended: stored patches keep their button indices
+#define ACT_COUNT    23
 extern const char *act_name[ACT_COUNT];
 
 #define BTN_SLOTS 8        // A, B, L, R, Up, Down, Left, Right
@@ -132,6 +133,36 @@ typedef struct {
     Adsr    env[2];              // [FM_MOD] index envelope, [FM_CAR] amplitude envelope
 } Voice;
 
+// ---- the 4-operator voice (VOICE MODE 4-OP) ----
+// Operator levels are DX-style, 0..99 at 0.75 dB per step (OP_LEVEL): for a modulator that is its
+// modulation depth (99 = 8 pi radians, 83 ~ 6 rad, 67 ~ 1.6 rad), for a carrier its loudness.
+// Ratio is the DX7's: coarse x (1 + fine/100), coarse 0 meaning 0.5.
+typedef struct {
+    uint8_t coarse;              // 0..31 (0 = 0.5)
+    uint8_t fine;                // 0..99
+    int8_t  detune;              // cents, -99..+99
+    uint8_t level;               // 0..99
+    Adsr    env;
+} Op;
+
+typedef struct {
+    uint8_t preset;              // the 4-op preset last loaded (display only)
+    uint8_t algo;                // 0..7 = algorithms 1..8
+    uint8_t fb;                  // operator 4 feedback, 0..7
+    int8_t  pitchEnv;            // -48..+48 semitones
+    uint8_t pitchTime;           // ENV_MS index
+    uint8_t note;                // the note 0 V plays
+    int8_t  octave;
+    uint8_t glide;
+    uint8_t level;               // mixer level, 0..15
+    int8_t  pan;                 // mixer pan, -7..+7
+    uint8_t pad[2];
+    Op      op[4];               // [0] = operator 1 ... [3] = operator 4
+} Voice4;
+
+#define VMODE_2OP 0              // V1 + V2 (2-op)
+#define VMODE_4OP 1              // one 4-op voice in V1's place
+
 // 'FM', not 108's 'GB'. The Workshop's sixteen flash slots are shared by every program that uses
 // them, so a 108 patch can be sitting in a slot this program loads. A different magic means it is
 // rejected ("BAD DATA - NOT LOADED") instead of being read as an FM patch it never was.
@@ -140,7 +171,9 @@ typedef struct {
 // that is checked rather than assumed, and on migrating rather than rejecting where possible.
 //   v2  two voices, drums, the matrix, the buttons, the mixer. A LAYOUT change: v1 (the
 //       single-voice beta, never released) is rejected.
-#define PATCH_VERSION 2
+//   v3  the 4-op voice and VOICE MODE, APPENDED after v2's last field. Migrated, not rejected: a
+//       v2 slot arrives zero-padded past its end, and synth_patch_migrate() fills the new fields.
+#define PATCH_VERSION 3
 
 typedef struct {
     uint16_t magic;
@@ -160,6 +193,11 @@ typedef struct {
     // audio jack), AU for AU1/AU2.
     int16_t  cvScale, cvOffset;
     int16_t  auScale, auOffset;
+
+    // ---- v3 ---- (keep appending; v2's layout above must not move)
+    uint8_t  voiceMode;          // VMODE_*
+    uint8_t  pad3;
+    Voice4   v4;
 } Patch;
 
 extern Patch g_patch;
