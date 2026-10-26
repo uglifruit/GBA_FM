@@ -148,7 +148,7 @@ typedef struct {
 typedef struct {
     uint8_t preset;              // the 4-op preset last loaded (display only)
     uint8_t algo;                // 0..7 = algorithms 1..8
-    uint8_t fb;                  // operator 4 feedback, 0..7
+    uint8_t fb;                  // operator 4 feedback, 0..7: YM-style, from op 4's OUTPUT (fm.c)
     int8_t  pitchEnv;            // -48..+48 semitones
     uint8_t pitchTime;           // ENV_MS index
     uint8_t note;                // the note 0 V plays
@@ -156,7 +156,11 @@ typedef struct {
     uint8_t glide;
     uint8_t level;               // mixer level, 0..15
     int8_t  pan;                 // mixer pan, -7..+7
-    uint8_t pad[2];
+    // Semitones, -24..+24: the converted DX voices carry their own transpose (many sit an octave
+    // down). This byte was padding in the first v3 layout, so older v3 patches read it as 0 -
+    // no transpose, which is right - and the layout did not change.
+    int8_t  transpose;
+    uint8_t pad;
     Op      op[4];               // [0] = operator 1 ... [3] = operator 4
 } Voice4;
 
@@ -212,6 +216,8 @@ extern uint8_t  g_btnTrigHeld;           // a TRIG button is held
 extern uint8_t  g_slotNote[FM_SLOTS];    // the note each slot is playing
 extern uint8_t  g_liveRatio[FM_SLOTS];   // ratio index after modulation
 extern uint8_t  g_liveIndex[FM_SLOTS];   // index after modulation, tenths of a radian, 0..250
+// The control tick's wall time against its ~1 ms period, percent x 16 (CAL page, TICK LOAD).
+extern volatile uint16_t g_tickAvg, g_tickPeak;
 
 void synth_init(void);
 void synth_update(void);

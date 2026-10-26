@@ -259,12 +259,35 @@ feedback; operator 1 is a carrier in every algorithm.
 The matrix means the same things where it can. INDEX moves every *modulator's* level, half a step
 per unit (about ±23 dB at full amount); RATIO steps every modulator's coarse ratio; DETUNE detunes
 the modulators; FEEDBACK is operator 4's; the envelope destinations reach all four operators.
+**Operator 4's feedback is taken from its output, as on the YM chips**: FB 7 is up to 4π of
+operator 4's own output, each step halving it, so a quiet operator 4 feeds back gently. (The 2-op
+voices' FEEDBACK is different: it is on the modulator's raw sine, independent of the index.)
 NOISE has nothing to act on. On the BTN page the V1 actions act on the 4-op voice: RATIO ± steps
 the **algorithm**, INDEX ± moves every modulator's level by 3, FB ± is operator 4's feedback,
 PRESET ± walks the 4-op presets.
 
-**4-op presets:** E.PIANO, E.PIANO 2, BELL, TUBULAR, MARIMBA, VIBES, GLOCK, HARP, CLAV, BASS, SYN BASS, BRASS, STRINGS, PAD, ORGAN, FLUTE. Loading one replaces the algorithm, feedback, pitch envelope
-and all four operators, and keeps level, pan, note, octave and portamento.
+**4-op presets: real Yamaha 4-op voices.** DX7 EP, ElectroPno, NewElectro, Wood Piano, Elec Grand, Toy Piano, RichHarpsi, SplashClav, 16 8 4 2 F, PercOrgan, Small Pipe, Tube Bells, Celeste, Glocken, GreatVibes, Marimba, Xylophone, Steel Drum, Koto, NylonGuit, Pizz. 1, E.Bass 3, ElecBass 1, AnlgBass.2, Horns BC, FrenchHorn, Trumpet 2, Flute 1, Squeezebox, BCSexyPhon, Strings, Sy.Voice 1.
+
+They are converted by `payload/gen_dx_presets.py` from **Bryan Sutula's TX81Z/DX11 Voice Archive**
+(1991; distributed with MusE's DeicsOnze, whose README describes it as public domain). Most are
+Yamaha's own TX81Z and DX11 factory presets; a few come from the patch libraries the archive
+collected; each one's source is noted in `presets4.h`. Only sine-wave, ratio-mode voices were taken,
+so the DX21/DX27/DX100/DX11 family converts faithfully. The original 128-byte VMEM records are kept
+in the generator.
+
+- **Exact:** algorithm (same eight, same numbering), operator output level (0–99 at 0.75 dB per
+  step), operator 4 feedback, coarse + TX81Z fine ratio (to ~1 %), transpose.
+- **Approximated:** the rate-based envelopes (AR, D1R, D1L, D2R, RR) become ADSR times. A D2R
+  that keeps a note dying while held becomes a decay to silence unless it is slower than ~15 s.
+  Detune (a fixed few-Hz offset on the chip) becomes about 2 cents of the fundamental per step,
+  divided by the operator's ratio.
+- **Dropped:** LFO (vibrato and tremolo), key velocity, keyboard level and rate scaling, pitch EG.
+  The renders behave as if every note were played at full velocity, which on DX patches is the
+  brightest case.
+
+Loading a preset replaces the algorithm, feedback, transpose, pitch envelope and all four operators,
+and keeps level, pan, note, octave and portamento. The FM page has a TRANSPOSE row (±24 semitones;
+A + Left/Right steps an octave) for the 4-op voice.
 
 ---
 
@@ -371,6 +394,9 @@ Voice 2's 0 V note. Two readings a known interval apart give SCALE directly as
 - **LINK** — IRQ when the serial interrupt is doing the work, POLLED if it has fallen back.
 - **DSP LOAD** — the renderer's time against its budget, smoothed, then the worst single block
   since boot. See [The audio engine](#the-audio-engine).
+- **TICK LOAD** — the control tick's wall time against its ~1 ms period, smoothed, then the worst
+  single tick. What the audio and the tick leave over is all the screen gets, so a high reading is
+  a slow editor. (Wall time: an audio interrupt landing inside the tick is counted in it.)
 
 ---
 # Part 4 — Reference
@@ -511,7 +537,11 @@ together. Trim on the MIX page if that matters.
 - **IWRAM:** the two DMA handlers, the dispatcher, the 2-op and 4-op renderers, the sine and pitch
   tables (~8.8 KB), plus both rings and the voice state (~0.8 KB). It sits at the bottom of IWRAM; the stacks stay
   at the top (user `0x03007C00`, IRQ `0x03007FA0`, giving the interrupt 928 bytes; the deepest
-  audio path uses about 350). The drawing primitives (`rect`, `line`, `glyph`) live there too. `crt0.s` copies `.iwram` in
+  audio path uses about 350). The drawing primitives (`rect`, `line`, `glyph`, `text`) live there
+  too, and so does the 1 kHz control tick (`synth_tick` and everything it calls every tick) with
+  the data it shares with the renderer (`g_fm`, `g_fm4`, `g_patch`): from EWRAM the tick took most
+  of each millisecond and the editor crawled. About 17.9 KB of IWRAM is used in all. A voice slot
+  that is switched off and silent is not recomputed by the tick. `crt0.s` copies `.iwram` in
   from its load address in the image and zeroes `.iwram_bss`, before `.bss`.
 - **CPU, estimated from the disassembly:** the clean inner loop is 73 instructions per four
   samples, the noise loop 115, and the stereo mix about 8 per sample per voice. That is roughly

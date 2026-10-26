@@ -5,8 +5,8 @@
  * image, and crt0.s copies it across before main(). objcopy -O binary works from load addresses,
  * so the copy rides inside payload.mb with no gap.
  *
- * IWRAM is shared with the stacks at its top (user 0x03007E00, IRQ 0x03007FA0, both growing down);
- * the IWRAM sections grow up from the bottom and are a few KB, so the two never meet. */
+ * IWRAM is shared with the stacks at its top (user 0x03007C00, IRQ 0x03007FA0, both growing down);
+ * the IWRAM sections grow up from the bottom (~18 KB), so the two never meet. */
 
 OUTPUT_FORMAT("elf32-littlearm")
 OUTPUT_ARCH(arm)

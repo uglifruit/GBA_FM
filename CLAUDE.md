@@ -199,7 +199,7 @@ C-compatible (payload is C, firmware is C++): plain `#define` and `static inline
    and `voice4_block`'s arrays are static IWRAM. Measure after any change to the audio path:
    compile `fm.c` with `-fstack-usage` and add up BIOS 24 + `irq_dispatch` + `audio_on_dma2_irq` +
    `fm_render_block` + `voice4_block` + `render_4op` (352 bytes today). IWRAM code and data grow
-   up from `0x03000000` (~10.5 KB today), well clear of the stacks.
+   up from `0x03000000` (~17.9 KB today, with the control tick), well clear of the stacks.
 6. **The serial IRQ does NOT replace the polled path.** `link_service()` still runs the same body
    with interrupts masked, so the two are mutually exclusive rather than racing. If the IRQ never
    fires the payload degrades to the polled behaviour. The CAL page shows which is live.
@@ -275,21 +275,59 @@ C-compatible (payload is C, firmware is C++): plain `#define` and `static inline
 - **Carriers are normalised by 1/sqrt(count)** in `voice4_out()`. 1/count was tried first: never
   clipped, but ORGAN and the alg-5 pianos came out 6–9 dB quieter than BASS. With 1/sqrt the 4-op
   presets peak 80–123 of 127 at level 14, none saturating.
-- Two 4-op presets needed fixing after measurement: SYN BASS (levels 80/72/66 + fb 5 tipped the
-  stack into noise — brighter AFTER the attack) and PAD (carriers set too low).
+- **The 4-op presets are converted real Yamaha voices** (2026-10-25): `gen_dx_presets.py` holds 32
+  raw VMEM records from Bryan Sutula's TX81Z/DX11 Voice Archive (via MusE's DeicsOnze `ARCH_ALIN`,
+  README: "public domain"; the archive's own header says "Copyright 1991 by Bryan Sutula. See README
+  file for restrictions" — Andy was told) and writes `presets4.h`. VMEM layout: operator slots
+  4, 2, 3, 1 (verified against OP SHOP's tx81z-core.js / Edisyn). The hand-designed set they
+  replaced leaned on alg 5 at cautious levels and sounded like doubled 2-op voices.
+- **Operator 4 feedback is from its OUTPUT** (YM-accurate, ymfm's opm.cpp as reference):
+  `fbAmt = 2^(10+FB)` on the sum of op 4's last two outputs, so FB 7 = 4π at full level. The
+  first 4-op engine fed back the raw sine, full strength whatever op 4's level, and real DX
+  voices (nearly all FB 7 with a moderate op 4) came out as noise. The 2-op voices keep their
+  raw-sine feedback.
+- Conversion lessons: honour D2R tails up to ~15 s (a 4 s cut-off left plucked voices sustaining
+  at full brightness); DET is a fixed Hz offset on the chip, so divide its cents by the ratio
+  (plain cents put DX7 EP's 15x tine 23 Hz out); measure at CENTRE pan (181/256) — at full gain
+  several multi-carrier voices appeared to clip, at centre none do. Harmonic-to-noise is a poor
+  judge of detuned or inharmonic voices: it reads chorus as noise. Listen.
 - `melodic_pitch()` takes note/octave/glide rather than a `Voice*` so the 4-op voice can use it;
   it records each voice's target in `g_target[]` and the tick sets `g_pitchQ8` ONCE from the
   active main voice. (A first draft called it twice for V1 to restore g_pitchQ8 — that would have
   run V1's glide at double speed.)
-- Upload is now 51 KB / ~7.7 s. The eight loop copies and the grid UI are most of the growth.
+- Upload is now ~53 KB / ~8 s. The eight loop copies, the grid UI and the 32 DX presets are most
+  of the growth.
 
 ## Drawing speed
 
-- **`rect`, `line` and `glyph` run from IWRAM** (`gfx.c`). From EWRAM, one pixel per iteration and
+- **THE EDITOR'S SPEED IS SET BY WHAT THE MAIN LOOP IS LEFT, NOT BY THE FILL RATE.** After the
+  primitives moved to IWRAM (below) the editor still painted row by row (Andy, 2026-10-26). The
+  cause was the 1 kHz control tick: `synth_tick` and its callees (~1900 instructions per tick with
+  four 2-op slots, the 4-op voice and the matrix) ran from EWRAM at ~6 cycles per ARM instruction,
+  ~13K of the 16.8K cycles in each millisecond, and with the audio on top the UI got a sliver.
+  `gfx_idle()` runs owed ticks after every character, so every character paid for one. Fixed
+  2026-10-26: the tick and everything it calls every tick are `IWRAM_CODE` (helpers
+  `always_inline`), `g_fm`, `g_fm4`, their envelope readouts and `g_patch` are `IWRAM_BSS`, and an
+  inactive slot is not recomputed once it is silent. **The CAL page's TICK LOAD row measures it**
+  (wall time inside the tick against its ~1 ms period, so it includes audio interrupts landing in
+  it). Watch it after adding anything to the tick, the way DSP LOAD is watched for the renderer.
+  **Measured after the fix (Andy, 2026-10-26): about 40 % average, peak under 85 %** — "FAR
+  better". The average is above the ~15 % the instruction count predicts because it is wall time
+  (audio interrupts inside the tick count) and the tick's tables (`NOTE_INC`, `ENV_COEF`, ...)
+  are still read from EWRAM.
+- **`SPEEDUPSCREEN.md` is the handoff for doing the same in a sibling** (written for 108, which on
+  2026-10-26 still had no IWRAM sections at all, pixel-at-a-time primitives and its tick in EWRAM).
+  Keep it in step if this approach changes. Like this file, it is working notes, not release docs.
+- The generic GBA advice (Mode 4 page flipping, DMA3 copies from a WRAM canvas, tile-mode text) was
+  considered and rejected: it fixes fill rate, which was never the bottleneck; page flipping fights
+  the per-region caches (every change would go to both pages); tile text needs an 8-pixel grid and
+  the font advances 6. The undocumented EWRAM 1-wait-state register (`0x04000800`) was also left
+  alone: its behaviour across GBA models (the Micro especially) could not be confirmed.
+- **`rect`, `line`, `glyph` and `text` run from IWRAM** (`gfx.c`). From EWRAM, one pixel per iteration and
   a `rect()` call per lit glyph pixel, a full-screen clear was ~1M cycles (~60 ms, estimated) and
   the editor visibly crawled (Andy, 2026-10-25). Now `rect` fills two pixels per 32-bit store,
-  unrolled by eight, and `glyph` (scale 1) and `line` write VRAM directly. Their callers (`text`,
-  `rect_clear`, the UI) stay in EWRAM.
+  unrolled by eight, and `glyph` (scale 1) and `line` write VRAM directly. Their callers
+  (`rect_clear`, the UI) stay in EWRAM.
 - Keep the VRAM pointers `volatile`: a plain fill loop is a memset idiom, and GCC emitting a call
   to `memset` is a -nostdlib link error.
 - `ui.c` cannot go Thumb or `-Os` to save upload time or speed up: both make GCC call
@@ -329,6 +367,11 @@ C-compatible (payload is C, firmware is C++): plain `#define` and `static inline
   page's AUD EDGES row says which is live.
 
 ## Patch storage
+
+**THE HOST ONLY KNOWS "ERASED" OR "WRITTEN".** `patch_store.cpp`'s `slot_valid()` came over from
+108 checking for 108's magic 'GB', so every FM patch ('FM') looked like an empty slot: MEM save was
+written and acked, then showed FREE, and load said SLOT IS EMPTY (fixed 2026-10-25). Judging what a
+patch is belongs to the GBA (`synth_patch_valid()`), never the firmware.
 
 **The magic is `'FM'` (0x464D), not 108's `'GB'`.** The Workshop's sixteen slots are one flash
 sector shared by whichever GBA program is running, so a 108 patch can sit in a slot this program

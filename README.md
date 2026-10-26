@@ -19,7 +19,8 @@ bells, electric pianos, plucks, basses, brass and a drum kit.
 **[Technical guide](TECHNICAL.md)** ·
 **[Program Card Firmware](UF2/gba_link.uf2)**
 
-> **Beta.** Built and checked in a bit-exact model of its maths; hardware testing is under way.
+> **Beta.** Running on hardware, with testing still under way. Its maths was checked first in a
+> bit-exact model.
 
 ---
 
@@ -122,11 +123,15 @@ ratio, level and envelope, arranged by one of **eight algorithms**, from a deep 
 four sine waves side by side. It plays from Voice 1's inputs (CV In 2 and Pulse In 2), and drum mode
 still works alongside it.
 
-It has its own presets, in the DX tradition:
+Its 32 presets are **real Yamaha 4-op voices**, most of them TX81Z and DX11 factory sounds, converted
+from Bryan Sutula's TX81Z/DX11 voice archive:
 
 | 4-op presets |
 |---|
-| E.PIANO, E.PIANO 2, BELL, TUBULAR, MARIMBA, VIBES, GLOCK, HARP, CLAV, BASS, SYN BASS, BRASS, STRINGS, PAD, ORGAN, FLUTE |
+| DX7 EP, ElectroPno, NewElectro, Wood Piano, Elec Grand, Toy Piano, RichHarpsi, SplashClav, 16 8 4 2 F, PercOrgan, Small Pipe, Tube Bells, Celeste, Glocken, GreatVibes, Marimba, Xylophone, Steel Drum, Koto, NylonGuit, Pizz. 1, E.Bass 3, ElecBass 1, AnlgBass.2, Horns BC, FrenchHorn, Trumpet 2, Flute 1, Squeezebox, BCSexyPhon, Strings, Sy.Voice 1 |
+
+The conversion is close but not exact: the original envelopes are approximated, and there is no
+vibrato (LFO) or velocity, so a few sounds (strings, choirs) are plainer than on the real thing.
 
 ## Drum mode
 
@@ -167,7 +172,9 @@ Sixteen patch slots, stored on the Workshop Computer. **D-pad** picks a slot, **
 Pick a voice (Voice 1, Voice 2, Drum A, Drum B), then its preset, ratio, detune, index, feedback,
 noise, pitch envelope, note, octave and portamento. Choosing a preset loads it straight away, so
 scrolling the list auditions it. In 4-op mode, Voice 1 is the 4-op voice: its preset, algorithm,
-operator 4's feedback, pitch envelope, note, octave and portamento.
+operator 4's feedback, pitch envelope, note, octave, transpose and portamento. Many of the Yamaha
+presets sit an octave up or down, as they did on the original synths; **TRANSPOSE** moves them
+(**A + Left/Right** steps a whole octave).
 
 ### ENV: envelopes
 
@@ -205,8 +212,10 @@ turns quantising off.
 ### CAL: calibration
 
 Trims how CV In 2 and Audio In 2 track 1V/oct, each with its own scale, offset and live tuner. It
-also shows the link state and how hard the sound engine is working. **You may need this page:**
-every Workshop Computer's inputs are slightly different.
+also shows the link state and two load meters: **DSP LOAD**, how hard the sound engine is working,
+and **TICK LOAD**, how much of the GBA's time goes on reading the inputs and updating the voices.
+Whatever the two leave over is what the screen gets. **You may need this page:** every Workshop
+Computer's inputs are slightly different.
 
 ---
 

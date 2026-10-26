@@ -33,6 +33,7 @@ builds with a bare `arm-none-eabi` toolchain targeting the GBA's ARM7TDMI (armv4
 | `audio.c/.h`    | Direct Sound A setup, the ring, the DMA interrupt (IWRAM) |
 | `fm.c/.h`       | FM renderer: voice slots, envelopes, pitch envelope, noise, stereo mix (IWRAM) |
 | `presets.c/.h`  | The factory sounds |
+| `presets4.h`    | **Generated** by `gen_dx_presets.py`: the 4-op presets, converted from real Yamaha TX81Z/DX11 voices |
 | `synth.c/.h`    | Control layer: the matrix, buttons, drum mode, pitch, the patch |
 | `ui.c/.h`       | Performance screen + eight-page editor |
 | `gba.h`         | Register macros and the IWRAM section attributes |

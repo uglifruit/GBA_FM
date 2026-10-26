@@ -74,7 +74,7 @@ typedef struct {
                                   // amplitude with the carrier-count normalisation and mixer
                                   // level already folded in
     uint32_t algo;                // 0..7 = algorithms 1..8
-    int32_t  fbAmt;               // operator 4 self-feedback multiplier, 0 = off
+    int32_t  fbAmt;               // operator 4 feedback multiplier on its OUTPUT, 0 = off
     int32_t  pitchEnv;            // semitones, -48..+48
     uint32_t pitchCoef;
     uint32_t gainL, gainR;        // Q8 pan gains

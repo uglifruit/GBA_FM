@@ -40,9 +40,10 @@ typedef struct {
     int32_t  pe;                  // pitch envelope level, Q16
 } VoiceState;
 
-volatile FmControl g_fm[FM_SLOTS];
+// In IWRAM: the control tick writes these and the audio interrupt reads them, both from IWRAM code.
+IWRAM_BSS volatile FmControl g_fm[FM_SLOTS];
 volatile uint32_t  g_fmActive;
-volatile uint16_t  g_fmEnv[FM_SLOTS][2];
+IWRAM_BSS volatile uint16_t  g_fmEnv[FM_SLOTS][2];
 
 static IWRAM_BSS VoiceState s_vs[FM_SLOTS];
 static IWRAM_BSS uint32_t   s_noise;       // xorshift32 state, shared by every slot
@@ -200,8 +201,8 @@ static IWRAM_CODE void render_voice(VoiceState *s, uint32_t ci, uint32_t mi, int
 }
 
 // ---- the 4-operator voice -------------------------------------------------------------------
-volatile Fm4Control g_fm4;
-volatile uint16_t   g_fm4Env[FM4_OPS];
+IWRAM_BSS volatile Fm4Control g_fm4;
+IWRAM_BSS volatile uint16_t   g_fm4Env[FM4_OPS];
 
 //                                              alg:  1     2     3     4     5     6     7     8
 const uint8_t FM4_CARRIERS[FM4_ALGOS]          = { 0x1,  0x1,  0x1,  0x1,  0x5,  0x7,  0x7,  0xF };
@@ -271,14 +272,20 @@ static IWRAM_BSS Voice4State s_v4;
 // The carriers' amplitudes are normalised by 1/sqrt(count) (control layer), so o can exceed
 // +-32767 when carriers peak together - at most +-65534 with four at full level, which the int32
 // mix carries comfortably before it saturates.
+// OPERATOR 4'S FEEDBACK TAKES ITS OUTPUT, not its raw sine - as the YM chips do. f1/f2 hold op 4's
+// last two outputs (+-32767), so feedback scales with op 4's level and envelope: a quiet op 4 at
+// FB 7 is a gentle buzz, not noise. (The first version fed back the raw sine, so any FB setting
+// was full strength whatever op 4's level - converted DX voices came out as noise.) The sum is
+// multiplied as UNSIGNED: it wraps modulo 2^32, which is modulo one cycle of phase.
 #define FM4_LOOP(BODY)                                                                     \
     for (int w = 0; w < AUDIO_BLOCK / 4; w++) {                                            \
         for (int k = 0; k < 4; k++) {                                                      \
-            int32_t  s4 = OP4_S(p4 + (uint32_t)((f1 + f2) * fbAmt));                       \
-            uint32_t m4 = OP4_M(s4, a4);                                                   \
+            int32_t  s4 = OP4_S(p4 + (uint32_t)(f1 + f2) * (uint32_t)fbAmt);               \
+            int32_t  pr4 = s4 * a4;                                                        \
+            uint32_t m4 = (uint32_t)pr4 << 3;                                              \
             int32_t  o;                                                                    \
             f2 = f1;                                                                       \
-            f1 = s4;                                                                       \
+            f1 = pr4 >> 16;                                                                \
             BODY                                                                           \
             (void)m4;                                                                      \
             *out++ = o;                                                                    \

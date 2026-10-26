@@ -183,8 +183,9 @@ static int pct_at(char *buf, int at, uint32_t p16)
 #define F4_PTIME   5
 #define F4_NOTE    6
 #define F4_OCTAVE  7
-#define F4_GLIDE   8
-#define F4_ROWS    9
+#define F4_TRANS   8
+#define F4_GLIDE   9
+#define F4_ROWS   10
 
 // MAP carries column headings above its rows, which need somewhere to live that is not on top
 // of the tab bar. It is the only page with that problem, so it is the only page that moves.
@@ -201,7 +202,7 @@ static int page_rows(int page)
     case PAGE_MAP: return SRC_COUNT;
     case PAGE_BTN: return BTN_SLOTS;
     case PAGE_SET: return 6;
-    case PAGE_CAL: return 9;
+    case PAGE_CAL: return 10;
     default:       return 1;                   // MEM and MIX: the page is a grid
     }
 }
@@ -226,6 +227,7 @@ static const char *fm4_label(int row)
     case F4_PTIME:  return "P.ENV TIME";
     case F4_NOTE:   return "0V NOTE";
     case F4_OCTAVE: return "OCTAVE";
+    case F4_TRANS:  return "TRANSPOSE";
     default:        return "PORTAMENTO";
     }
 }
@@ -246,6 +248,7 @@ static void fm4_value(int row, char *buf)
     case F4_PTIME:  env_time_text(buf, v->pitchTime); return;
     case F4_NOTE:   note_text(buf, v->note); return;
     case F4_OCTAVE: sdec32(buf, v->octave, 2); return;
+    case F4_TRANS:  sdec32(tmp, v->transpose, 3); scopy(buf, scopy(buf, 0, tmp), " ST"); return;
     default:        dec32(buf, v->glide, 2); return;
     }
 }
@@ -264,6 +267,9 @@ static void fm4_adjust(int row, int delta)
     case F4_NOTE:   v->note = (uint8_t)clampi(v->note + (delta == 8 ? 12 : delta == -8 ? -12 : delta),
                                               0, 120); return;
     case F4_OCTAVE: v->octave = (int8_t)clampi(v->octave + delta, -3, 3); return;
+    // Coarse is an octave: the DX voices' own transposes are mostly whole octaves.
+    case F4_TRANS:  v->transpose = (int8_t)clampi(v->transpose + (delta == 8 ? 12 : delta == -8 ? -12 : delta),
+                                                  -24, 24); return;
     default:        v->glide  = (uint8_t)clampi(v->glide + delta, 0, 15); return;
     }
 }
@@ -319,7 +325,8 @@ static const char *field_label(int page, int row)
         case 5: return "AUD 2 TUNER";
         case 6: return "AUD EDGES";
         case 7: return "LINK";
-        default: return "DSP LOAD";
+        case 8: return "DSP LOAD";
+        default: return "TICK LOAD";
         }
     default:
         return "";
@@ -425,12 +432,20 @@ static void field_value(int page, int row, char *buf)
             return;
         }
         case 7: scopy(buf, 0, link_irq_alive() ? "IRQ" : "POLLED"); return;
-        default: {
+        case 8: {
             // Smoothed load, then the worst single block since boot. The meter is the audio
             // interrupt's render time against its 16-sample budget; see audio.h.
             int at = pct_at(buf, 0, g_dspAvg);
             at = scopy(buf, at, " PK ");
             pct_at(buf, at, g_dspPeak);
+            return;
+        }
+        default: {
+            // The control tick's share of its ~1 ms period (synth.c). What it and the audio leave
+            // over is all the screen gets.
+            int at = pct_at(buf, 0, g_tickAvg);
+            at = scopy(buf, at, " PK ");
+            pct_at(buf, at, g_tickPeak);
             return;
         }
         }
@@ -591,12 +606,13 @@ static void play_frame(void)
         uint16_t env    = v4row ? g_fm4Env[0]  : g_fmEnv[s][FM_CAR];
         if (preset != lastPreset[s]) {
             lastPreset[s] = preset;
-            srect(10, y, 86, 9, COL_BG);
+            srect(10, y, 94, 9, COL_BG);
             text(14, y, v4row ? "4OP" : VOICE_TAG[s], COL_DIM, 1);
-            text(44, y, v4row ? preset4_name(preset) : preset_name(preset), COL_MID, 1);
+            text(42, y, v4row ? preset4_name(preset) : preset_name(preset), COL_MID, 1);
         }
-        int w = ((env >> 8) * level * 130) / (255 * 15);
-        meter(98, y + 1, w, 130, s == FV_V1 ? COL_OK : COL_BAR);
+        // x = 106: the 4-op presets carry their DX names, up to ten characters (42 + 60 = 102).
+        int w = ((env >> 8) * level * 124) / (255 * 15);
+        meter(106, y + 1, w, 124, s == FV_V1 ? COL_OK : COL_BAR);
         gfx_idle();
     }
 

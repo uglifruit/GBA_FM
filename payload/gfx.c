@@ -122,7 +122,8 @@ int text_width(const char *s, int scale)
     return n * FONT_ADV * scale;
 }
 
-void text(int x, int y, const char *s, uint16_t color, int scale)
+// IWRAM too: it runs once per character. The gfx_idle() it calls stays in EWRAM.
+IWRAM_CODE void text(int x, int y, const char *s, uint16_t color, int scale)
 {
     for (int i = 0; s[i]; i++) {
         glyph(x + i * FONT_ADV * scale, y, s[i], color, scale);
