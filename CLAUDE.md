@@ -373,9 +373,17 @@ C-compatible (payload is C, firmware is C++): plain `#define` and `static inline
 written and acked, then showed FREE, and load said SLOT IS EMPTY (fixed 2026-10-25). Judging what a
 patch is belongs to the GBA (`synth_patch_valid()`), never the firmware.
 
-**The magic is `'FM'` (0x464D), not 108's `'GB'`.** The Workshop's sixteen slots are one flash
-sector shared by whichever GBA program is running, so a 108 patch can sit in a slot this program
-loads. The different magic makes it a clean `BAD DATA - NOT LOADED` instead of a misread.
+**FM'S SLOTS ARE THE SECOND-TO-LAST FLASH SECTOR; 108 OWNS THE LAST.** Until 2026-10-26 both
+programs used the last sector, and flashing a UF2 does not erase it, so each one's saves wrote over
+the other's patches: a 108 patch in a slot FM saved to was gone, and in 108 the FM-written slots
+showed FREE ('FM' failed 108's old 'GB' check). FM moved rather than 108 because 108 is released
+and moving it would strand its users' patches; the cost was any FM patches saved before the move,
+which are left behind in 108's sector (108 now shows them USED, and loading one there gives BAD
+DATA). **Do not move this back, and give any further sibling program its own sector too.**
+
+**The magic is `'FM'` (0x464D), not 108's `'GB'`.** Belt and braces now the sectors are separate:
+should a 108 patch ever reach this program, it is a clean `BAD DATA - NOT LOADED` rather than a
+misread.
 
 **`PATCH_VERSION` (now 3) is checked, not assumed, and must be bumped whenever a stored field
 changes its LAYOUT *or* its MEANING.** A layout change cannot be recovered from the bytes, so

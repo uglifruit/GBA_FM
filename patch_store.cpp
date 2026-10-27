@@ -13,9 +13,12 @@
 static_assert(GBA_PATCH_SLOTS * GBA_PATCH_SLOT_BYTES == SECTOR_BYTES,
               "the slot table must be exactly one flash sector: the sector is the erase unit");
 
-// The last sector of the 2 MB part. Firmware is under 60 kB, so there is no chance of collision,
-// and putting it at the very end keeps it clear of anything the linker might grow into.
-static constexpr uint32_t kFlashOffset = PICO_FLASH_SIZE_BYTES - SECTOR_BYTES;
+// The SECOND-TO-LAST sector of the 2 MB part, NOT the last. The last belongs to GBA PSG Voice (108),
+// and flashing a UF2 never erases it, so while both programs used it each one's saves overwrote the
+// other's patches: a 108 patch in a slot FM saved to was simply gone. FM moved, not 108, because
+// moving 108 would strand every released 108 user's saved patches. Firmware is under 100 kB, so
+// there is still no chance of collision with the code.
+static constexpr uint32_t kFlashOffset = PICO_FLASH_SIZE_BYTES - 2 * SECTOR_BYTES;
 
 static const uint8_t *slot_ptr(int slot)
 {

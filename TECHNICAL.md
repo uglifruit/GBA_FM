@@ -588,8 +588,9 @@ together. Trim on the MIX page if that matters.
 
 ## Patch storage
 
-Sixteen slots in the last flash sector of the RP2040 — 256 bytes each, one sector, because the
-sector is the erase unit. A transfer is one byte per link word, each carrying its own index, so a
+Sixteen slots in the second-to-last flash sector of the RP2040 — 256 bytes each, one sector,
+because the sector is the erase unit. Not the last sector: that one holds GBA PSG Voice's
+patches, so the two programs' saves never overwrite each other. A transfer is one byte per link word, each carrying its own index, so a
 dropped word leaves a hole the receiver can see rather than silently shifting everything after
 it. A save repeats the whole block until the host acknowledges; the host only ever commits a
 complete one.

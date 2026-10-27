@@ -3,13 +3,13 @@ Name: GBA FM Voice
 short-description: "Boots a cartridge-less Game Boy Advance over the pulse jacks via BIOS Multiboot, then plays it as a stereo FM synth - two 2-op voices or one 4-op voice, plus a drum mode - with the editor on the GBA's own screen"
 Language: C++ (Pico SDK + ComputerCard) + C (GBA payload)
 Creator: Andy Jenkinson (uglifruit)
-Version: 0.4.0
+Version: 0.4.1
 Status: Beta
 License: MIT
 repository: https://github.com/uglifruit/GBA_FM
 Editor: none
 date-created: 2026-10-24
-date-updated: 2026-10-26
+date-updated: 2026-10-27
 
 contact:
   social:
@@ -17,7 +17,7 @@ contact:
 
 uf2:
   - path: UF2/gba_link.uf2
-    name: GBA FM Voice 0.4.0
+    name: GBA FM Voice 0.4.1
 
 tags:
   - gba
