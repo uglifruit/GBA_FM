@@ -843,10 +843,12 @@ static void edit_list(void)
         int a = ((g_scroll > 0) ? 1 : 0) | ((g_scroll + vis < rows) ? 2 : 0) | (g_page << 2);
         if (a != lastArrows) {
             lastArrows = a;
-            rect(230, top, 7, 4, COL_BG);
-            rect(230, top + vis * LIST_ROW - 6, 7, 4, COL_BG);
-            if (a & 1) arrow(230, top, 1, COL_TITLE);
-            if (a & 2) arrow(230, top + vis * LIST_ROW - 6, 0, COL_TITLE);
+            // x = 232: just right of the row band (8..231). At 230 these clears cut a notch out of
+            // the selected row's highlight and the corner off long values (CAL's TICK LOAD).
+            rect(232, top, 7, 4, COL_BG);
+            rect(232, top + vis * LIST_ROW - 6, 7, 4, COL_BG);
+            if (a & 1) arrow(232, top, 1, COL_TITLE);
+            if (a & 2) arrow(232, top + vis * LIST_ROW - 6, 0, COL_TITLE);
         }
     }
 }

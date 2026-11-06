@@ -41,8 +41,13 @@ would take a full re-investigation to rediscover.
 - `ComputerCard.h` is Andy's improved copy of the HAL, not stock — see below.
 - `README.md` stays at user-manual level; depth belongs in `TECHNICAL.md`. 108's user manual PDF
   and screenshots describe the PSG voice and were deliberately NOT copied. `docs/images/` holds
-  only the three generic drawings shared with 108 (hero, link-port pinout, consoles); there are
-  no FM screenshots yet.
+  the three generic drawings shared with 108 (hero, link-port pinout, consoles) and
+  `screens/`, the README's screenshots. **They are rendered, not photographed**:
+  `payload/screenshots.py` runs the real `payload.elf` under unicorn (mode 3 means VRAM is the
+  framebuffer, so only the ARM needs emulating), fakes a host through the link globals and presses
+  buttons between `ui_frame()` calls. Re-run it after any UI change (`pip install unicorn pillow`).
+  Its first run found a real UI bug: the list's scroll-arrow clears at x=230 notched the selected
+  row and clipped CAL's longest value; they now sit at x=232, right of the row band (8..231).
 
 ## OPEN RISK: confirm both sound DMAs raise their IRQs after EVERY FIFO block
 

@@ -117,6 +117,8 @@ FM sounds are hard to build from nothing, so every voice has **presets** to star
 
 ## 4-op mode
 
+<img src="docs/images/screens/screen-play-4op.png" alt="PLAY screen in 4-op mode" width="360">
+
 Set **VOICE MODE** to **4-OP** on the SET page and the two 2-operator voices give way to **one
 4-operator voice** in the classic Yamaha style (DX21, TX81Z): four operators, each with its own
 ratio, level and envelope, arranged by one of **eight algorithms**, from a deep 4→3→2→1 stack to
@@ -134,6 +136,8 @@ The conversion is close but not exact: the original envelopes are approximated, 
 vibrato (LFO) or velocity, so a few sounds (strings, choirs) are plainer than on the real thing.
 
 ## Drum mode
+
+<img src="docs/images/screens/screen-play-drums.png" alt="PLAY screen in drum mode" width="360">
 
 Turn on **DRUM MODE** on the SET page, or give it a button on the BTN page. Voice 2 steps aside and
 **Audio In 1 and Audio In 2 become two drum triggers**: Drum A (a kick by default) and Drum B (a
@@ -155,6 +159,8 @@ that follows CV In 2.
 
 ### PLAY
 
+<img src="docs/images/screens/screen-play.png" alt="PLAY screen" width="360">
+
 The performance screen. It shows the note playing, a meter and preset name for each voice that is
 sounding, Voice 1's ratio, index and feedback, and the live inputs and knobs. Here the **D-pad, A,
 B and shoulder buttons** are for playing: trigger, hold, octave, ratio and feedback by default, all
@@ -162,12 +168,16 @@ set on the BTN page.
 
 ### MEM: patch memory
 
+<img src="docs/images/screens/screen-mem.png" alt="MEM page" width="360">
+
 Sixteen patch slots, stored on the Workshop Computer. **D-pad** picks a slot, **A + Up** saves,
 **A + Down** loads. GBA PSG Voice patches in the same slots show **BAD DATA** and are left alone.
 
 > ⚠️ Saving overwrites the slot straight away. Check you are on the right slot first.
 
 ### FM: the voices
+
+<img src="docs/images/screens/screen-fm.png" alt="FM page" width="300"> <img src="docs/images/screens/screen-fm-4op.png" alt="FM page in 4-op mode" width="300">
 
 Pick a voice (Voice 1, Voice 2, Drum A, Drum B), then its preset, ratio, detune, index, feedback,
 noise, pitch envelope, note, octave and portamento. Choosing a preset loads it straight away, so
@@ -177,6 +187,8 @@ presets sit an octave up or down, as they did on the original synths; **TRANSPOS
 (**A + Left/Right** steps a whole octave).
 
 ### ENV: envelopes
+
+<img src="docs/images/screens/screen-env.png" alt="ENV page" width="300"> <img src="docs/images/screens/screen-env-4op.png" alt="ENV page: the 4-op operator grid" width="300">
 
 Two envelopes per voice: **MOD INDEX** (brightness over the note) and **CARRIER** (volume). Attack,
 decay, sustain and release, with the shape drawn as you edit it.
@@ -189,9 +201,13 @@ operator 4's feedback right there.
 
 ### MIX: mixer
 
+<img src="docs/images/screens/screen-mix.png" alt="MIX page" width="360">
+
 A fader per voice: level (0–15, 2.5 dB per step) and left / right panning.
 
 ### MAP: modulation
+
+<img src="docs/images/screens/screen-map.png" alt="MAP page" width="360">
 
 What each input does. Each source (CV 1, CV 2, Audio 1, Audio 2, Pulse 2 and the three knobs) gets
 a destination, an amount, and a tickbox per voice. Destinations include pitch, gate, index, ratio,
@@ -199,10 +215,14 @@ level, feedback, noise, the envelope times and pan. An amount of +32 on PITCH is
 
 ### BTN: buttons
 
+<img src="docs/images/screens/screen-btn.png" alt="BTN page" width="360">
+
 What each GBA button does on the PLAY page: trigger or hold either voice, octave, ratio, index,
 feedback, step through presets, hit a drum, or turn drum mode on and off.
 
 ### SET: settings
+
+<img src="docs/images/screens/screen-set.png" alt="SET page" width="360">
 
 Voice mode (two 2-op voices or one 4-op voice), drum mode, which voice the Z switch plays, and the
 key, scale and tuning. Choose a scale to
@@ -210,6 +230,8 @@ quantise everything you play, and CV Out 2 becomes a quantiser for the rest of y
 turns quantising off.
 
 ### CAL: calibration
+
+<img src="docs/images/screens/screen-cal.png" alt="CAL page" width="360">
 
 Trims how CV In 2 and Audio In 2 track 1V/oct, each with its own scale, offset and live tuner. It
 also shows the link state and two load meters: **DSP LOAD**, how hard the sound engine is working,
