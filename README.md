@@ -19,9 +19,6 @@ bells, electric pianos, plucks, basses, brass and a drum kit.
 **[Technical guide](TECHNICAL.md)** ·
 **[Program Card Firmware](UF2/gba_link.uf2)**
 
-> **Beta.** Running on hardware, with testing still under way. Its maths was checked first in a
-> bit-exact model.
-
 ---
 
 ## What you need
@@ -171,7 +168,8 @@ set on the BTN page.
 <img src="docs/images/screens/screen-mem.png" alt="MEM page" width="360">
 
 Sixteen patch slots, stored on the Workshop Computer. **D-pad** picks a slot, **A + Up** saves,
-**A + Down** loads. GBA PSG Voice patches in the same slots show **BAD DATA** and are left alone.
+**A + Down** loads. GBA PSG Voice keeps its own sixteen slots, so the two programs never overwrite
+each other's patches.
 
 > ⚠️ Saving overwrites the slot straight away. Check you are on the right slot first.
 

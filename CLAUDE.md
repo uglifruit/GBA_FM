@@ -22,18 +22,19 @@ would take a full re-investigation to rediscover.
 - **What it is now (phase 2):** two FM voices (V1 on CV2/PU2, V2 on AU2/AU1), a drum mode that
   turns AU1/AU2 into two drum triggers, stereo (FIFO A left, FIFO B right), 26 presets, and an
   eight-page editor (MEM FM ENV MIX MAP BTN SET CAL) with 108's MAP matrix and BTN actions back.
-- **Not yet tested on hardware** (as of 2026-10-24). The FM maths has been checked in a bit-exact
+- **Released as 1.0.0 on 2026-11-07**, after running on Andy's hardware from 2026-10-25. Before
+  that, the FM maths was checked in a bit-exact
   Python model (sidebands against Bessel values, envelope times, overflow in every voice, the noise
   blend, the pitch envelope and the mix) — see TECHNICAL.md, "The audio engine". The model is not
-  in the repo; it lived in a session scratchpad. The first hardware session should settle the open
-  risk below.
+  in the repo; it lived in a session scratchpad.
 - **NEVER COPY A `build/` DIRECTORY BETWEEN TREES.** The initial copy from 108 carried
   `diagnostics/build/` with a CMake cache and ninja files holding 108's ABSOLUTE paths, so building
   it here compiled 108's sources and wrote 108's diagnostics outputs. It was deleted and
   reconfigured in place on 2026-10-24; if a build dir ever looks inherited, delete it.
 - **Repo: `uglifruit/GBA_FM`** (public, created 2026-10-24). No card number yet. `info.yaml` says
-  `draft: true`, `Status: Beta`. Run the monorepo validator before any release — the `Status`
-  value in particular is unvalidated.
+  `draft: false`, `Status: Released`, `Version: 1.0.0` (108's form), but no PR to the monorepo has
+  been opened yet. Run the monorepo validator before one — the `Status` value in particular is
+  unvalidated (`Released` is what 108 and most releases use).
 - Keep it self-contained (vendored `ComputerCard.h`, no external path deps) so copy-in is clean.
 - **THIS FILE DOES NOT GO INTO A RELEASE.** It is working notes addressed to an assistant.
 - **The built firmware goes in as `UF2/gba_link.uf2`**, rebuilt and re-copied whenever the payload

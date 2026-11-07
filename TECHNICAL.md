@@ -301,10 +301,11 @@ scales). Inside the editor no button carries its performance meaning.
 ## MEM — sixteen patch slots
 
 108's page, unchanged. **A + Up** saves to the highlighted slot, **A + Down** loads. The slots live
-on the Workshop and are shared with GBA PSG Voice: an FM patch carries the magic `'FM'` where 108's
-carries `'GB'`, so loading one program's patch into the other reports `BAD DATA - NOT LOADED` and
-leaves the current sound alone. Patches from the single-voice beta (version 1) are rejected the
-same way.
+on the Workshop, in a flash sector of their own: GBA PSG Voice keeps its sixteen in the next one, so
+neither program's saves touch the other's. As a second guard an FM patch carries the magic `'FM'`
+where 108's carries `'GB'`, so a patch that is not this program's reports `BAD DATA - NOT LOADED`
+and leaves the current sound alone. Patches from the single-voice beta (version 1) are rejected the
+same way. FM patches saved before 0.4.1 were left behind in 108's sector when the two split.
 
 ## FM — a voice
 
